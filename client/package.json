@@ -12,7 +12,6 @@
     "phaser": "3.90.0"
   },
   "devDependencies": {
-    "@afterglow/shared": "*",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.0"
