@@ -16,29 +16,32 @@ COPY . .
 # Build Vite client → server/public, then compile server TypeScript → server/dist
 RUN npm run build -w client && npm run build -w server
 
-# Drop dev deps so the copied node_modules are lean
+# Prune dev deps so the copied node_modules are lean
 RUN npm prune --omit=dev
 
 # ── Stage 2: production image ──────────────────────────────────────────────────
 FROM node:22-alpine
 WORKDIR /app
 
-# Re-install only server production deps in a clean directory.
-# This avoids copying workspace symlinks that point to non-existent paths.
-COPY server/package.json ./package.json
-RUN npm install --omit=dev
+# Copy the pruned workspace node_modules from the builder.
+# Docker COPY dereferences workspace symlinks (e.g. @afterglow/*) into real
+# directories; we immediately remove them since the compiled server JS has no
+# runtime imports from those packages (TypeScript types are erased at compile time).
+COPY --from=builder /app/node_modules ./node_modules
+RUN rm -rf node_modules/@afterglow
 
 # Compiled server JS
 COPY --from=builder /app/server/dist ./server/dist
 
-# Built client (output from Vite, written to server/public by the builder)
+# Built client (Vite output written to server/public by the builder)
 COPY --from=builder /app/server/public ./server/public
 
 EXPOSE 3000
 ENV PORT=3000
 ENV NODE_ENV=production
 
+# Use 127.0.0.1 (not localhost) to avoid IPv6 resolution issues on Alpine.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD wget -qO- "http://localhost:${PORT}/health" || exit 1
+  CMD wget -qO- "http://127.0.0.1:3000/health" || exit 1
 
 CMD ["node", "server/dist/index.js"]

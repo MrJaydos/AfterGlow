@@ -1,0 +1,8 @@
+node_modules
+server/dist
+server/public
+data
+.env
+*.sqlite
+.DS_Store
+neon-speedrun-claude-code-prompt.md
