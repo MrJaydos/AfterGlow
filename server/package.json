@@ -1,0 +1,23 @@
+{
+  "name": "@afterglow/server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "echo 'No migrations in Phase 1'",
+    "db:seed": "echo 'No seed in Phase 1'"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.1.3",
+    "fastify": "^5.8.5"
+  },
+  "devDependencies": {
+    "@afterglow/shared": "*",
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

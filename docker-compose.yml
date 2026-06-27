@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      DB_PATH: /data/afterglow.sqlite
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-change-me}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-*}"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

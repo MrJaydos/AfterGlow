@@ -1,0 +1,12 @@
+node_modules/
+dist/
+server/public/
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+data/
+.DS_Store
+*.js.map
+npm-debug.log*
+.vite/
