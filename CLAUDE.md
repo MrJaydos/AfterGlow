@@ -54,7 +54,7 @@ Keep these accurate as the project evolves. Intended package scripts:
 - Heavy post-FX (CRT, grain, chromatic aberration, glow intensity, screen shake) are all toggleable in settings; ship a high-contrast/reduced-effects mode. Add shape redundancy for hazards (don't rely on color alone).
 
 ## Deployment workflow
-- Develop on a working branch (or push to `main` if instructed); merge to `main` only when green. Push to `main` = live deploy via Coolify's GitHub watch/webhook.
+- **Auto-push policy:** after every completed phase or bugfix that passes `npm run build`, commit and push to `main` immediately — no need to ask. This is standing authorisation.
 - Conventional commit messages (`feat:`, `fix:`, `chore:` …). After a push, note what to verify and that Coolify will redeploy.
 - Coolify needs: build pack = Dockerfile, env vars from `.env.example`, a persistent volume at `/data` (without it, leaderboard data is wiped on redeploy).
 - Cloudflare Tunnel routes the public hostname to the Coolify service's internal `address:port`; no inbound ports opened. Details in `README.md`.
