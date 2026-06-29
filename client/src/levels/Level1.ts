@@ -96,14 +96,14 @@ export function buildLevel1(scene: Phaser.Scene): BuiltLevel {
   addCoin(3165, 414);  // descending plat 2 (top 430)
 
   // ── Enemies ─────────────────────────────────────────────────────────────────
-  // Patrol enemies — no gravity, stay at spawn y, reverse at patrol boundaries.
+  // Plain array — no physics group so Phaser never touches the body after init.
   // center_y = platform_top - half_height(18) for "standing" appearance.
-  const enemyGroup = scene.physics.add.group();
+  const enemies: Enemy[] = [];
 
   const addEnemy = (x: number, y: number, left: number, right: number): void => {
     const e = new Enemy(scene, x, y, left, right);
     e.setDepth(4);
-    enemyGroup.add(e);
+    enemies.push(e);
   };
 
   addEnemy(920,  654, 860,  1000); // floor between D and CP1
@@ -130,7 +130,7 @@ export function buildLevel1(scene: Phaser.Scene): BuiltLevel {
     finishLineX: 3760,
     checkpoints,
     coins,
-    enemyGroup,
+    enemies,
     powerups,
   };
 }

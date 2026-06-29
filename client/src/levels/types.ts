@@ -1,4 +1,5 @@
 import type { LevelMeta } from '@afterglow/shared';
+import type { Enemy } from '../entities/Enemy';
 
 export interface Checkpoint {
   id: number;
@@ -15,7 +16,7 @@ export interface BuiltLevel {
   finishLineX: number;
   checkpoints: Checkpoint[];
   coins:      Phaser.Physics.Arcade.StaticGroup;
-  enemyGroup: Phaser.Physics.Arcade.Group;
+  enemies:    Enemy[];
   powerups:   Phaser.Physics.Arcade.StaticGroup;
 }
 

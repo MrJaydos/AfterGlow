@@ -59,14 +59,14 @@ export class GameScene extends Phaser.Scene {
   preload(): void { /* no file assets */ }
 
   create(): void {
-    this.accumulator       = 0;
-    this.hitstopMs         = 0;
-    this.runPhase          = 'waiting';
-    this.deaths            = 0;
+    this.accumulator        = 0;
+    this.hitstopMs          = 0;
+    this.runPhase           = 'waiting';
+    this.deaths             = 0;
     this.checkpointRespawns = 0;
     this.activeCheckpointId = 0;
-    this.coinsCollected    = 0;
-    this.enemies           = [];
+    this.coinsCollected     = 0;
+    this.enemies            = [];
 
     // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
@@ -89,37 +89,35 @@ export class GameScene extends Phaser.Scene {
     const def   = LEVEL_REGISTRY[DEFAULT_LEVEL_ID];
     const level = def.build(this);
 
-    this.spawnX      = level.spawnX;
-    this.spawnY      = level.spawnY;
-    this.startLineX  = level.startLineX;
-    this.finishLineX = level.finishLineX;
-    this.checkpoints = level.checkpoints;
+    this.spawnX       = level.spawnX;
+    this.spawnY       = level.spawnY;
+    this.startLineX   = level.startLineX;
+    this.finishLineX  = level.finishLineX;
+    this.checkpoints  = level.checkpoints;
     this.activeSpawnX = this.spawnX;
     this.activeSpawnY = this.spawnY;
 
-    // Cache enemy references for attack hit-detection
-    this.enemies = level.enemyGroup.getChildren() as Enemy[];
+    // Enemy references — plain array, no physics group interference
+    this.enemies = level.enemies;
 
     // ── Player ────────────────────────────────────────────────────────────────
     this.player = new Player(this, this.spawnX, this.spawnY);
     this.player.setDepth(5);
     this.physics.add.collider(this.player, level.platforms);
 
-    // ── Collectible / combat overlaps ─────────────────────────────────────────
+    // ── Collectible overlaps (coins + powerups use StaticGroups — safe) ───────
     this.physics.add.overlap(
       this.player, level.coins,
       (_p, coin) => { this.onCoinCollect(coin as Phaser.Physics.Arcade.Image); },
     );
 
     this.physics.add.overlap(
-      this.player, level.enemyGroup,
-      (_p, _e) => { this.onEnemyContact(); },
-    );
-
-    this.physics.add.overlap(
       this.player, level.powerups,
       (_p, pu) => { this.onPowerupCollect(pu as Phaser.Physics.Arcade.Image); },
     );
+
+    // Enemy contact is checked manually each fixed tick (see checkEnemyContact)
+    // to avoid physics group issues that reset enemy body gravity.
 
     // ── Camera ────────────────────────────────────────────────────────────────
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -152,6 +150,7 @@ export class GameScene extends Phaser.Scene {
       }
       this.timer.tick(FIXED_DT_MS);
       this.checkAttacks();
+      this.checkEnemyContact();
       this.accumulator -= FIXED_DT_MS;
     }
 
@@ -198,7 +197,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const e of this.enemies) {
       if (!e.active) continue;
-      const dx = (e.x - px) * f; // positive = in front of player
+      const dx = (e.x - px) * f; // positive = enemy is in front of player
       const dy = Math.abs(e.y - py);
       if (dx > -20 && dx < ATTACK_RANGE_X && dy < ATTACK_RANGE_Y) {
         this.killEnemy(e);
@@ -206,15 +205,25 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private killEnemy(e: Enemy): void {
-    e.destroy();
-    // Brief hitstop — feels satisfying, communicates the kill
-    this.hitstopMs = 80;
+  private checkEnemyContact(): void {
+    if (this.player.isInvincible) return;
+
+    const pb = this.player.body as Phaser.Physics.Arcade.Body;
+    for (const e of this.enemies) {
+      if (!e.active) continue;
+      const eb = e.body as Phaser.Physics.Arcade.Body;
+      // AABB overlap test
+      if (pb.right > eb.left && pb.left < eb.right &&
+          pb.bottom > eb.top && pb.top < eb.bottom) {
+        this.onDeath();
+        return; // one death per tick is enough
+      }
+    }
   }
 
-  private onEnemyContact(): void {
-    if (this.player.isInvincible) return;
-    this.onDeath();
+  private killEnemy(e: Enemy): void {
+    e.destroy();
+    this.hitstopMs = 80;
   }
 
   private onCoinCollect(coin: Phaser.Physics.Arcade.Image): void {
@@ -225,7 +234,7 @@ export class GameScene extends Phaser.Scene {
 
   private onPowerupCollect(pu: Phaser.Physics.Arcade.Image): void {
     pu.destroy();
-    this.player.applySpeedBoost(5000); // 5-second speed boost
+    this.player.applySpeedBoost(5000);
   }
 
   // ── Run lifecycle ─────────────────────────────────────────────────────────────

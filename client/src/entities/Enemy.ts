@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { WORLD_GRAVITY } from '../constants';
 
 const SPEED = 110; // px/s
 
@@ -22,6 +23,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(28, 36);
     body.setAllowGravity(false);
+    // Cancel world gravity explicitly — belt-and-suspenders in case
+    // a physics group or scene restart re-enables allowGravity.
+    body.setGravityY(-WORLD_GRAVITY);
     body.setImmovable(true);
   }
 
@@ -32,6 +36,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.x >= this.patrolRight || body.blocked.right) this.direction = -1;
 
     body.setVelocityX(SPEED * this.direction);
+    body.setVelocityY(0); // hard-lock vertical — no drift regardless of gravity state
     this.setFlipX(this.direction < 0);
   }
 }
