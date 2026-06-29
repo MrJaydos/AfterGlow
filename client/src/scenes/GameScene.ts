@@ -120,6 +120,11 @@ export class GameScene extends Phaser.Scene {
     // to avoid physics group issues that reset enemy body gravity.
 
     // ── Camera ────────────────────────────────────────────────────────────────
+    // Viewport is 550 px tall (not the full 720) so the bottom 170 px of the
+    // canvas is a touch-button zone that never overlaps gameplay.
+    // Button centres sit at y=644 (radius 54 → top edge y=590), safely below
+    // the 550 px viewport boundary.
+    this.cameras.main.setViewport(0, 0, WORLD_W, 550);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
@@ -300,7 +305,7 @@ export class GameScene extends Phaser.Scene {
       fontSize: '28px', fontFamily: 'monospace', color: '#ffffff',
     }).setScrollFactor(0).setDepth(100).setOrigin(1, 0);
 
-    this.statusText = this.add.text(640, 680, '→  CROSS THE START LINE  →', {
+    this.statusText = this.add.text(640, 530, '→  CROSS THE START LINE  →', {
       fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.PLAYER),
     }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 1).setAlpha(0.8);
 
@@ -333,9 +338,9 @@ export class GameScene extends Phaser.Scene {
     this.finishTimeLabel.setVisible(true);
     this.finishHint.setVisible(true);
 
-    this.input.keyboard!.once('keydown', () => {
-      this.scene.restart();
-    });
+    // Restart on any key (desktop) or any tap (mobile)
+    this.input.keyboard!.once('keydown', () => { this.scene.restart(); });
+    this.input.once('pointerdown',       () => { this.scene.restart(); });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
