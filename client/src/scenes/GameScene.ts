@@ -16,16 +16,16 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'Game' });
   }
 
-  preload(): void {
-    // Generate the player texture procedurally — a 24×44 cyan rectangle
-    const g = this.make.graphics({}, false);
-    g.fillStyle(PALETTE.PLAYER, 1);
-    g.fillRect(0, 0, 24, 44);
-    g.generateTexture('player-tex', 24, 44);
-    g.destroy();
-  }
+  preload(): void { /* textures generated in create() after renderer is ready */ }
 
   create(): void {
+    // Player texture — generated here so the renderer is guaranteed to be ready
+    const pg = this.add.graphics();
+    pg.fillStyle(PALETTE.PLAYER, 1);
+    pg.fillRect(0, 0, 24, 44);
+    pg.generateTexture('player-tex', 24, 44);
+    pg.destroy();
+
     // World bounds
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
 
@@ -56,10 +56,7 @@ export class GameScene extends Phaser.Scene {
     // Input — stored as inputSystem to avoid shadowing Phaser.Scene.input
     this.inputSystem = new InputSystem(this);
 
-    // Debug overlay (DEV only — removed via tree shaking in prod since import.meta.env.DEV)
-    if (import.meta.env.DEV) {
-      this.buildDebugHUD();
-    }
+    this.buildDebugHUD();
   }
 
   update(_time: number, delta: number): void {

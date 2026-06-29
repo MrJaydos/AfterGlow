@@ -49,8 +49,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(24, 44);
     body.setMaxVelocityY(MAX_FALL);
-
-    this.postFX.addGlow(0x00f0ff, 12, 2);
   }
 
   fixedUpdate(dt: number, input: InputSnapshot): void {
