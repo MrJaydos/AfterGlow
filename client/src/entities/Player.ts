@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import type { InputSnapshot } from '../systems/InputSystem';
 
+function moveTowards(current: number, target: number, maxDelta: number): number {
+  const diff = target - current;
+  if (Math.abs(diff) <= maxDelta) return target;
+  return current + Math.sign(diff) * maxDelta;
+}
+
 // ── Movement tuning ────────────────────────────────────────────────────────────
 const WALK_SPEED      = 210;   // px/s max horizontal
 const ACCEL           = 1600;  // px/s² ground acceleration
@@ -135,10 +141,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (inputDir !== 0 && this.wallJumpLockMs <= 0) {
       this.facing = inputDir as 1 | -1;
       const accel = onGround ? ACCEL : AIR_ACCEL;
-      body.setVelocityX(Phaser.Math.MoveTowards(body.velocity.x, inputDir * WALK_SPEED, accel * dt / 1000));
+      body.setVelocityX(moveTowards(body.velocity.x, inputDir * WALK_SPEED, accel * dt / 1000));
     } else {
       const decel = onGround ? FRICTION : AIR_FRICTION;
-      body.setVelocityX(Phaser.Math.MoveTowards(body.velocity.x, 0, decel * dt / 1000));
+      body.setVelocityX(moveTowards(body.velocity.x, 0, decel * dt / 1000));
     }
 
     // ── Gravity modification ───────────────────────────────────────────────────
