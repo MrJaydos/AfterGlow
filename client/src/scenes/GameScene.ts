@@ -16,7 +16,7 @@ export class GameScene extends Phaser.Scene {
   private timer!: TimerSystem;
   private accumulator = 0;
 
-  // Level state
+  // Level data
   private spawnX = 80;
   private spawnY = 640;
   private startLineX = 200;
@@ -28,14 +28,17 @@ export class GameScene extends Phaser.Scene {
   private deathMode: DeathMode = 'reset';
   private deaths = 0;
   private checkpointRespawns = 0;
-  private activeCheckpointId = 0;   // 0 = none; id of last touched checkpoint
+  private activeCheckpointId = 0;
   private activeSpawnX = 0;
   private activeSpawnY = 0;
 
-  // UI
+  // HUD objects
   private timerText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
-  private finishOverlay!: Phaser.GameObjects.Container;
+  private finishBg!: Phaser.GameObjects.Rectangle;
+  private finishTitle!: Phaser.GameObjects.Text;
+  private finishTimeLabel!: Phaser.GameObjects.Text;
+  private finishHint!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'Game' });
@@ -44,17 +47,17 @@ export class GameScene extends Phaser.Scene {
   preload(): void { /* no file assets */ }
 
   create(): void {
-    this.accumulator = 0;
-    this.runPhase    = 'waiting';
-    this.deaths      = 0;
+    this.accumulator        = 0;
+    this.runPhase           = 'waiting';
+    this.deaths             = 0;
     this.checkpointRespawns = 0;
     this.activeCheckpointId = 0;
 
-    // ── Procedural textures ───────────────────────────────────────────────────
+    // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex', 24, 44, toHex(PALETTE.PLAYER));
     this.makeCanvasTex('pixel',       1,  1, '#ffffff');
 
-    // ── World bounds ──────────────────────────────────────────────────────────
+    // ── Physics world ─────────────────────────────────────────────────────────
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
 
     // ── Background ────────────────────────────────────────────────────────────
@@ -85,7 +88,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    // ── Input & timer ─────────────────────────────────────────────────────────
+    // ── Systems ───────────────────────────────────────────────────────────────
     this.inputSystem = new InputSystem(this);
     this.timer       = new TimerSystem();
 
@@ -96,7 +99,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.runPhase === 'finished') return;
 
-    // ── Fixed-timestep accumulator ────────────────────────────────────────────
+    // Fixed-timestep accumulator
     this.accumulator += delta;
     while (this.accumulator >= FIXED_DT_MS) {
       const snap = this.inputSystem.snapshot();
@@ -105,19 +108,20 @@ export class GameScene extends Phaser.Scene {
       this.accumulator -= FIXED_DT_MS;
     }
 
-    // ── Trigger detection ─────────────────────────────────────────────────────
     const px = this.player.x;
 
+    // Start trigger
     if (this.runPhase === 'waiting' && px >= this.startLineX) {
       this.startRun();
     }
 
+    // Finish trigger
     if (this.runPhase === 'running' && px >= this.finishLineX) {
       this.finishRun();
       return;
     }
 
-    // Advance active checkpoint (highest id whose triggerX the player has passed)
+    // Advance checkpoint
     for (const cp of this.checkpoints) {
       if (px >= cp.triggerX && cp.id > this.activeCheckpointId) {
         this.activeCheckpointId = cp.id;
@@ -126,16 +130,16 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // ── Fall-off respawn ──────────────────────────────────────────────────────
+    // Fall-off
     if (this.player.y > WORLD_H + 60) {
       this.onDeath();
     }
 
-    // ── Timer display ─────────────────────────────────────────────────────────
+    // Update timer display
     this.timerText.setText(this.timer.format());
   }
 
-  // ── Run lifecycle ───────────────────────────────────────────────────────────
+  // ── Run lifecycle ────────────────────────────────────────────────────────────
 
   private startRun(): void {
     this.runPhase = 'running';
@@ -146,23 +150,21 @@ export class GameScene extends Phaser.Scene {
   private finishRun(): void {
     this.runPhase = 'finished';
     this.timer.stop();
-    this.showFinishOverlay();
+    this.showFinishScreen();
   }
 
   private onDeath(): void {
     this.deaths++;
-
     if (this.deathMode === 'reset') {
-      // Full run reset — back to before start line
-      this.runPhase = 'waiting';
-      this.timer.reset();
+      this.runPhase           = 'waiting';
       this.activeCheckpointId = 0;
-      this.activeSpawnX = this.spawnX;
-      this.activeSpawnY = this.spawnY;
+      this.activeSpawnX       = this.spawnX;
+      this.activeSpawnY       = this.spawnY;
+      this.timer.reset();
+      this.timerText.setText(this.timer.format());
       this.statusText.setVisible(true);
       this.doRespawn(this.spawnX, this.spawnY);
     } else {
-      // Checkpoint mode — clock never stops
       this.checkpointRespawns++;
       this.doRespawn(this.activeSpawnX, this.activeSpawnY);
     }
@@ -174,85 +176,60 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(0, 0);
   }
 
-  // ── UI ──────────────────────────────────────────────────────────────────────
+  // ── HUD / UI ─────────────────────────────────────────────────────────────────
 
   private buildHUD(levelName: string, parTimeMs: number): void {
-    const parStr = new TimerSystem();
-    // Manually format par time
-    const m  = Math.floor(parTimeMs / 60_000);
-    const s  = Math.floor((parTimeMs % 60_000) / 1_000);
-    const ms = parTimeMs % 1_000;
-    const parFormatted = `${m}:${s.toString().padStart(2,'0')}.${ms.toString().padStart(3,'0')}`;
-    void parStr;
+    const m   = Math.floor(parTimeMs / 60_000);
+    const s   = Math.floor((parTimeMs % 60_000) / 1_000);
+    const ms  = parTimeMs % 1_000;
+    const par = `${m}:${s.toString().padStart(2,'0')}.${ms.toString().padStart(3,'0')}`;
 
-    // Level name (top-left)
     this.add.text(10, 10, levelName, {
       fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.PLATFORM_GLOW),
     }).setScrollFactor(0).setDepth(100).setAlpha(0.7);
 
-    // Par time hint
-    this.add.text(10, 28, `PAR  ${parFormatted}`, {
+    this.add.text(10, 28, `PAR  ${par}`, {
       fontSize: '12px', fontFamily: 'monospace', color: toHex(PALETTE.PLATFORM_GLOW),
     }).setScrollFactor(0).setDepth(100).setAlpha(0.5);
 
-    // Timer (top-right)
     this.timerText = this.add.text(1270, 10, '0:00.000', {
       fontSize: '28px', fontFamily: 'monospace', color: '#ffffff',
     }).setScrollFactor(0).setDepth(100).setOrigin(1, 0);
 
-    // "Cross start line" hint
     this.statusText = this.add.text(640, 680, '→  CROSS THE START LINE  →', {
       fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.PLAYER),
     }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 1).setAlpha(0.8);
 
-    // Finish overlay (hidden until run ends)
-    this.finishOverlay = this.buildFinishOverlay();
-    this.finishOverlay.setVisible(false);
-  }
+    // Finish overlay — plain objects, no container
+    this.finishBg = this.add.rectangle(640, 360, 1280, 720, 0x000000, 0.7)
+      .setScrollFactor(0).setDepth(200).setVisible(false);
 
-  private buildFinishOverlay(): Phaser.GameObjects.Container {
-    const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.6);
-    bg.fillRect(-640, -360, 1280, 720);
+    this.finishTitle = this.add.text(640, 280, 'FINISH', {
+      fontSize: '72px', fontFamily: 'monospace', color: toHex(PALETTE.FINISH_LIME),
+    }).setScrollFactor(0).setDepth(201).setOrigin(0.5).setVisible(false);
 
-    const title = this.add.text(0, -60, 'FINISH', {
-      fontSize: '64px', fontFamily: 'monospace', color: toHex(PALETTE.FINISH_LIME),
-    }).setOrigin(0.5);
+    this.finishTimeLabel = this.add.text(640, 370, '0:00.000', {
+      fontSize: '44px', fontFamily: 'monospace', color: '#ffffff',
+    }).setScrollFactor(0).setDepth(201).setOrigin(0.5).setVisible(false);
 
-    const timeLabel = this.add.text(0, 20, '0:00.000', {
-      fontSize: '40px', fontFamily: 'monospace', color: '#ffffff',
-    }).setOrigin(0.5);
-
-    const hint = this.add.text(0, 90, 'press any key to restart', {
+    this.finishHint = this.add.text(640, 440, 'press any key to restart', {
       fontSize: '16px', fontFamily: 'monospace', color: toHex(PALETTE.PLATFORM_GLOW),
-    }).setOrigin(0.5).setAlpha(0.7);
-
-    const container = this.add.container(640, 360, [bg, title, timeLabel, hint]);
-    container.setScrollFactor(0).setDepth(200);
-
-    // Any key restarts
-    this.input.keyboard!.once('keydown', () => {
-      if (this.runPhase === 'finished') this.scene.restart();
-    });
-
-    // Store reference to timeLabel so we can update it
-    (container as Phaser.GameObjects.Container & { timeLabel: Phaser.GameObjects.Text }).timeLabel = timeLabel;
-
-    return container;
+    }).setScrollFactor(0).setDepth(201).setOrigin(0.5).setAlpha(0.7).setVisible(false);
   }
 
-  private showFinishOverlay(): void {
-    const container = this.finishOverlay as Phaser.GameObjects.Container & { timeLabel: Phaser.GameObjects.Text };
-    container.timeLabel.setText(this.timer.format());
-    container.setVisible(true);
+  private showFinishScreen(): void {
+    this.finishTimeLabel.setText(this.timer.format());
+    this.finishBg.setVisible(true);
+    this.finishTitle.setVisible(true);
+    this.finishTimeLabel.setVisible(true);
+    this.finishHint.setVisible(true);
 
-    // Re-register restart key (once was consumed if scene was restarted before)
     this.input.keyboard!.once('keydown', () => {
-      if (this.runPhase === 'finished') this.scene.restart();
+      this.scene.restart();
     });
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private makeCanvasTex(key: string, w: number, h: number, color: string): void {
     if (this.textures.exists(key)) return;
