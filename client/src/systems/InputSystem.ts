@@ -11,6 +11,8 @@ export interface InputSnapshot {
   jumpReleased: boolean;
   /** True for exactly one tick when dash key transitions down */
   dashPressed: boolean;
+  /** True for exactly one tick when attack key transitions down (F key) */
+  attackPressed: boolean;
 }
 
 export class InputSystem {
@@ -22,9 +24,10 @@ export class InputSystem {
   private readonly touch: TouchControls;
 
   // Edge-triggered flags — set by keyboard events, consumed once per snapshot
-  private _jumpPressed  = false;
-  private _jumpReleased = false;
-  private _dashPressed  = false;
+  private _jumpPressed   = false;
+  private _jumpReleased  = false;
+  private _dashPressed   = false;
+  private _attackPressed = false;
 
   constructor(scene: Phaser.Scene) {
     const kb = scene.input.keyboard!;
@@ -34,13 +37,15 @@ export class InputSystem {
     this.keyS = kb.addKey('S');
     this.keyD = kb.addKey('D');
 
-    const onJumpDown = () => { this._jumpPressed  = true; };
-    const onJumpUp   = () => { this._jumpReleased = true; };
-    const onDashDown = () => { this._dashPressed  = true; };
+    const onJumpDown   = () => { this._jumpPressed   = true; };
+    const onJumpUp     = () => { this._jumpReleased  = true; };
+    const onDashDown   = () => { this._dashPressed   = true; };
+    const onAttackDown = () => { this._attackPressed = true; };
 
     for (const k of ['UP', 'W', 'Z', 'SPACE']) kb.on(`keydown-${k}`, onJumpDown);
     for (const k of ['UP', 'W', 'Z', 'SPACE']) kb.on(`keyup-${k}`,   onJumpUp);
     for (const k of ['X', 'SHIFT'])             kb.on(`keydown-${k}`, onDashDown);
+    kb.on('keydown-F',                                                  onAttackDown);
 
     this.touch = new TouchControls(scene);
   }
@@ -57,18 +62,20 @@ export class InputSystem {
       this.touch.jumpHeld;
 
     const snap: InputSnapshot = {
-      left:         this.cursors.left.isDown  || this.keyA.isDown || this.touch.left,
-      right:        this.cursors.right.isDown || this.keyD.isDown || this.touch.right,
-      down:         this.cursors.down.isDown  || this.keyS.isDown,
+      left:          this.cursors.left.isDown  || this.keyA.isDown || this.touch.left,
+      right:         this.cursors.right.isDown || this.keyD.isDown || this.touch.right,
+      down:          this.cursors.down.isDown  || this.keyS.isDown,
       jumpHeld,
-      jumpPressed:  this._jumpPressed  || tc.jumpPressed,
-      jumpReleased: this._jumpReleased || tc.jumpReleased,
-      dashPressed:  this._dashPressed  || tc.dashPressed,
+      jumpPressed:   this._jumpPressed   || tc.jumpPressed,
+      jumpReleased:  this._jumpReleased  || tc.jumpReleased,
+      dashPressed:   this._dashPressed   || tc.dashPressed,
+      attackPressed: this._attackPressed || tc.attackPressed,
     };
 
-    this._jumpPressed  = false;
-    this._jumpReleased = false;
-    this._dashPressed  = false;
+    this._jumpPressed   = false;
+    this._jumpReleased  = false;
+    this._dashPressed   = false;
+    this._attackPressed = false;
 
     return snap;
   }

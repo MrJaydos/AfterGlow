@@ -8,12 +8,15 @@ export interface Checkpoint {
 }
 
 export interface BuiltLevel {
-  platforms: Phaser.Physics.Arcade.StaticGroup;
+  platforms:  Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
   spawnY: number;
   startLineX: number;
   finishLineX: number;
   checkpoints: Checkpoint[];
+  coins:      Phaser.Physics.Arcade.StaticGroup;
+  enemyGroup: Phaser.Physics.Arcade.Group;
+  powerups:   Phaser.Physics.Arcade.StaticGroup;
 }
 
 export interface LevelDef {

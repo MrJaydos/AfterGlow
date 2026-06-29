@@ -4,9 +4,14 @@ import { FIXED_DT_MS, WORLD_W, WORLD_H } from '../constants';
 import { InputSystem } from '../systems/InputSystem';
 import { TimerSystem } from '../systems/TimerSystem';
 import { Player } from '../entities/Player';
+import { Enemy } from '../entities/Enemy';
 import { LEVEL_REGISTRY, DEFAULT_LEVEL_ID } from '../levels/LevelRegistry';
 import type { Checkpoint } from '../levels/types';
 import { PALETTE, toHex } from '../gfx/palette';
+
+// Melee hit range (player-center to enemy-center in world units)
+const ATTACK_RANGE_X = 68; // px in the facing direction (and a little behind)
+const ATTACK_RANGE_Y = 44; // px above/below
 
 type RunPhase = 'waiting' | 'running' | 'finished';
 
@@ -15,13 +20,18 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private timer!: TimerSystem;
   private accumulator = 0;
+  private hitstopMs   = 0; // freeze-frame when enemy dies
 
   // Level data
   private spawnX = 80;
   private spawnY = 640;
-  private startLineX = 200;
+  private startLineX  = 200;
   private finishLineX = 3760;
   private checkpoints: Checkpoint[] = [];
+
+  // Combat / collectibles
+  private enemies: Enemy[] = [];
+  private coinsCollected = 0;
 
   // Run state
   private runPhase: RunPhase = 'waiting';
@@ -35,10 +45,12 @@ export class GameScene extends Phaser.Scene {
   // HUD objects
   private timerText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
-  private finishBg!: Phaser.GameObjects.Rectangle;
-  private finishTitle!: Phaser.GameObjects.Text;
+  private coinText!:   Phaser.GameObjects.Text;
+  private boostText!:  Phaser.GameObjects.Text;
+  private finishBg!:        Phaser.GameObjects.Rectangle;
+  private finishTitle!:     Phaser.GameObjects.Text;
   private finishTimeLabel!: Phaser.GameObjects.Text;
-  private finishHint!: Phaser.GameObjects.Text;
+  private finishHint!:      Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'Game' });
@@ -47,15 +59,21 @@ export class GameScene extends Phaser.Scene {
   preload(): void { /* no file assets */ }
 
   create(): void {
-    this.accumulator        = 0;
-    this.runPhase           = 'waiting';
-    this.deaths             = 0;
+    this.accumulator       = 0;
+    this.hitstopMs         = 0;
+    this.runPhase          = 'waiting';
+    this.deaths            = 0;
     this.checkpointRespawns = 0;
     this.activeCheckpointId = 0;
+    this.coinsCollected    = 0;
+    this.enemies           = [];
 
     // ── Textures ──────────────────────────────────────────────────────────────
-    this.makeCanvasTex('player-tex', 24, 44, toHex(PALETTE.PLAYER));
-    this.makeCanvasTex('pixel',       1,  1, '#ffffff');
+    this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
+    this.makeCanvasTex('enemy-tex',   28, 36, toHex(PALETTE.DANGER_RED));
+    this.makeCanvasTex('pixel',        1,  1, '#ffffff');
+    this.makeCanvasCircle('coin-tex',     16, toHex(PALETTE.COIN));
+    this.makeCanvasCircle('powerup-tex',  20, toHex(PALETTE.POWERUP_VIOLET));
 
     // ── Physics world ─────────────────────────────────────────────────────────
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -79,10 +97,29 @@ export class GameScene extends Phaser.Scene {
     this.activeSpawnX = this.spawnX;
     this.activeSpawnY = this.spawnY;
 
+    // Cache enemy references for attack hit-detection
+    this.enemies = level.enemyGroup.getChildren() as Enemy[];
+
     // ── Player ────────────────────────────────────────────────────────────────
     this.player = new Player(this, this.spawnX, this.spawnY);
     this.player.setDepth(5);
     this.physics.add.collider(this.player, level.platforms);
+
+    // ── Collectible / combat overlaps ─────────────────────────────────────────
+    this.physics.add.overlap(
+      this.player, level.coins,
+      (_p, coin) => { this.onCoinCollect(coin as Phaser.Physics.Arcade.Image); },
+    );
+
+    this.physics.add.overlap(
+      this.player, level.enemyGroup,
+      (_p, _e) => { this.onEnemyContact(); },
+    );
+
+    this.physics.add.overlap(
+      this.player, level.powerups,
+      (_p, pu) => { this.onPowerupCollect(pu as Phaser.Physics.Arcade.Image); },
+    );
 
     // ── Camera ────────────────────────────────────────────────────────────────
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -99,12 +136,22 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.runPhase === 'finished') return;
 
+    // Hitstop: freeze everything for a brief flash when killing an enemy
+    if (this.hitstopMs > 0) {
+      this.hitstopMs -= delta;
+      return;
+    }
+
     // Fixed-timestep accumulator
     this.accumulator += delta;
     while (this.accumulator >= FIXED_DT_MS) {
       const snap = this.inputSystem.snapshot();
       this.player.fixedUpdate(FIXED_DT_MS, snap);
+      for (const e of this.enemies) {
+        if (e.active) e.fixedUpdate(FIXED_DT_MS);
+      }
       this.timer.tick(FIXED_DT_MS);
+      this.checkAttacks();
       this.accumulator -= FIXED_DT_MS;
     }
 
@@ -135,11 +182,53 @@ export class GameScene extends Phaser.Scene {
       this.onDeath();
     }
 
-    // Update timer display
+    // Update HUD
     this.timerText.setText(this.timer.format());
+    this.boostText.setVisible(this.player.speedBoostMs > 0);
   }
 
-  // ── Run lifecycle ────────────────────────────────────────────────────────────
+  // ── Combat ───────────────────────────────────────────────────────────────────
+
+  private checkAttacks(): void {
+    if (!this.player.isAttacking) return;
+
+    const px = this.player.x;
+    const py = this.player.y;
+    const f  = this.player.facing;
+
+    for (const e of this.enemies) {
+      if (!e.active) continue;
+      const dx = (e.x - px) * f; // positive = in front of player
+      const dy = Math.abs(e.y - py);
+      if (dx > -20 && dx < ATTACK_RANGE_X && dy < ATTACK_RANGE_Y) {
+        this.killEnemy(e);
+      }
+    }
+  }
+
+  private killEnemy(e: Enemy): void {
+    e.destroy();
+    // Brief hitstop — feels satisfying, communicates the kill
+    this.hitstopMs = 80;
+  }
+
+  private onEnemyContact(): void {
+    if (this.player.isInvincible) return;
+    this.onDeath();
+  }
+
+  private onCoinCollect(coin: Phaser.Physics.Arcade.Image): void {
+    coin.destroy();
+    this.coinsCollected++;
+    this.coinText.setText(`COINS  ${this.coinsCollected}`);
+  }
+
+  private onPowerupCollect(pu: Phaser.Physics.Arcade.Image): void {
+    pu.destroy();
+    this.player.applySpeedBoost(5000); // 5-second speed boost
+  }
+
+  // ── Run lifecycle ─────────────────────────────────────────────────────────────
 
   private startRun(): void {
     this.runPhase = 'running';
@@ -168,6 +257,8 @@ export class GameScene extends Phaser.Scene {
       this.checkpointRespawns++;
       this.doRespawn(this.activeSpawnX, this.activeSpawnY);
     }
+    // Grace iframes so the player doesn't instantly die again on respawn
+    this.player.startInvincible(1200);
   }
 
   private doRespawn(x: number, y: number): void {
@@ -176,7 +267,7 @@ export class GameScene extends Phaser.Scene {
     body.setVelocity(0, 0);
   }
 
-  // ── HUD / UI ─────────────────────────────────────────────────────────────────
+  // ── HUD / UI ──────────────────────────────────────────────────────────────────
 
   private buildHUD(levelName: string, parTimeMs: number): void {
     const m   = Math.floor(parTimeMs / 60_000);
@@ -192,6 +283,10 @@ export class GameScene extends Phaser.Scene {
       fontSize: '12px', fontFamily: 'monospace', color: toHex(PALETTE.PLATFORM_GLOW),
     }).setScrollFactor(0).setDepth(100).setAlpha(0.5);
 
+    this.coinText = this.add.text(10, 48, 'COINS  0', {
+      fontSize: '12px', fontFamily: 'monospace', color: toHex(PALETTE.COIN),
+    }).setScrollFactor(0).setDepth(100).setAlpha(0.85);
+
     this.timerText = this.add.text(1270, 10, '0:00.000', {
       fontSize: '28px', fontFamily: 'monospace', color: '#ffffff',
     }).setScrollFactor(0).setDepth(100).setOrigin(1, 0);
@@ -200,7 +295,11 @@ export class GameScene extends Phaser.Scene {
       fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.PLAYER),
     }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 1).setAlpha(0.8);
 
-    // Finish overlay — plain objects, no container
+    this.boostText = this.add.text(640, 56, '⚡ SPEED BOOST', {
+      fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.POWERUP_VIOLET),
+    }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 0).setVisible(false);
+
+    // Finish overlay — plain objects, no Container
     this.finishBg = this.add.rectangle(640, 360, 1280, 720, 0x000000, 0.7)
       .setScrollFactor(0).setDepth(200).setVisible(false);
 
@@ -218,7 +317,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showFinishScreen(): void {
-    this.finishTimeLabel.setText(this.timer.format());
+    const coinSuffix = this.coinsCollected > 0 ? `  ·  ${this.coinsCollected} coins` : '';
+    this.finishTimeLabel.setText(this.timer.format() + coinSuffix);
     this.finishBg.setVisible(true);
     this.finishTitle.setVisible(true);
     this.finishTimeLabel.setVisible(true);
@@ -229,13 +329,24 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────────
 
   private makeCanvasTex(key: string, w: number, h: number, color: string): void {
     if (this.textures.exists(key)) return;
     const tex = this.textures.createCanvas(key, w, h);
     tex.context.fillStyle = color;
     tex.context.fillRect(0, 0, w, h);
+    tex.refresh();
+  }
+
+  private makeCanvasCircle(key: string, size: number, color: string): void {
+    if (this.textures.exists(key)) return;
+    const tex = this.textures.createCanvas(key, size, size);
+    const r = size / 2;
+    tex.context.fillStyle = color;
+    tex.context.beginPath();
+    tex.context.arc(r, r, r - 1, 0, Math.PI * 2);
+    tex.context.fill();
     tex.refresh();
   }
 

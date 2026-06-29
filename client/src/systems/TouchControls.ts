@@ -12,52 +12,62 @@ export class TouchControls {
   right    = false;
   jumpHeld = false;
 
-  private _jumpPressed  = false;
-  private _jumpReleased = false;
-  private _dashPressed  = false;
+  private _jumpPressed   = false;
+  private _jumpReleased  = false;
+  private _dashPressed   = false;
+  private _attackPressed = false;
 
   constructor(scene: Phaser.Scene) {
     this.available = scene.sys.game.device.input.touch;
     if (!this.available) return;
 
-    // Allow up to 4 simultaneous touches (left + right + jump + dash)
-    scene.input.addPointer(3);
+    // Allow up to 5 simultaneous touches (left + right + jump + dash + attack)
+    scene.input.addPointer(4);
 
-    const W   = scene.scale.width;
-    const H   = scene.scale.height;
-    const R   = 54;
-    const PAD = 22;
-    const Y   = H - PAD - R;
-    const GAP = 12;
+    const W    = scene.scale.width;
+    const H    = scene.scale.height;
+    const R    = 54;
+    const PAD  = 22;
+    const Y    = H - PAD - R;
+    const STEP = R * 2 + 12; // 120 px between centers
 
     // Left cluster
-    this.btn(scene, PAD + R,             Y, R, '◀',
+    this.btn(scene, PAD + R,            Y, R, '◀',
       () => { this.left = true; },
       () => { this.left = false; });
 
-    this.btn(scene, PAD + R * 2 + GAP + R, Y, R, '▶',
+    this.btn(scene, PAD + R + STEP,     Y, R, '▶',
       () => { this.right = true; },
       () => { this.right = false; });
 
-    // Right cluster — jump is the big action button
-    this.btn(scene, W - PAD - R,                   Y, R, '▲',
+    // Right cluster (right-to-left: jump, dash, attack)
+    this.btn(scene, W - PAD - R,            Y, R, '▲',
       () => { this._jumpPressed = true; this.jumpHeld = true; },
       () => { this._jumpReleased = true; this.jumpHeld = false; });
 
-    this.btn(scene, W - PAD - R * 2 - GAP - R,    Y, R, '⚡',
+    this.btn(scene, W - PAD - R - STEP,     Y, R, '⚡',
       () => { this._dashPressed = true; },
       () => { /* dash is edge-only */ });
+
+    this.btn(scene, W - PAD - R - STEP * 2, Y, R, '⚔',
+      () => { this._attackPressed = true; },
+      () => { /* attack is edge-only */ });
   }
 
-  consumeEdges(): { jumpPressed: boolean; jumpReleased: boolean; dashPressed: boolean } {
+  consumeEdges(): {
+    jumpPressed: boolean; jumpReleased: boolean;
+    dashPressed: boolean; attackPressed: boolean;
+  } {
     const out = {
-      jumpPressed:  this._jumpPressed,
-      jumpReleased: this._jumpReleased,
-      dashPressed:  this._dashPressed,
+      jumpPressed:   this._jumpPressed,
+      jumpReleased:  this._jumpReleased,
+      dashPressed:   this._dashPressed,
+      attackPressed: this._attackPressed,
     };
-    this._jumpPressed  = false;
-    this._jumpReleased = false;
-    this._dashPressed  = false;
+    this._jumpPressed   = false;
+    this._jumpReleased  = false;
+    this._dashPressed   = false;
+    this._attackPressed = false;
     return out;
   }
 
@@ -90,7 +100,7 @@ export class TouchControls {
       .setInteractive();
 
     zone.on(Phaser.Input.Events.POINTER_DOWN, onDown);
-    zone.on(Phaser.Input.Events.POINTER_UP, onUp);
-    zone.on(Phaser.Input.Events.POINTER_OUT, onUp);
+    zone.on(Phaser.Input.Events.POINTER_UP,   onUp);
+    zone.on(Phaser.Input.Events.POINTER_OUT,  onUp);
   }
 }

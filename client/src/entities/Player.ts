@@ -32,19 +32,36 @@ const WALL_JUMP_LOCK  = 90;    // ms of capped horizontal control after wall jum
 const MAX_FALL        = 680;   // px/s terminal velocity
 const FAST_FALL_MUL   = 1.55;  // extra-gravity multiplier while falling
 
+// ── Combat tuning ──────────────────────────────────────────────────────────────
+const ATTACK_DURATION  = 200;  // ms hitbox is active
+const ATTACK_COOLDOWN  = 450;  // ms before next attack
+const SPEED_BOOST_MUL  = 1.5;  // walk speed multiplier during boost
+
 export type PlayerState = 'idle' | 'run' | 'airborne' | 'dash' | 'wall_slide';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   playerState: PlayerState = 'idle';
   facing: 1 | -1 = 1;
 
-  private coyoteMs      = 0;
-  private jumpBufferMs  = 0;
+  // Attack state — read by GameScene for hit detection
+  isAttacking      = false;
+  attackActiveMs   = 0;
+  attackCooldownMs = 0;
+
+  // Damage / invincibility frames
+  isInvincible  = false;
+  invincibleMs  = 0;
+
+  // Speed boost powerup
+  speedBoostMs = 0;
+
+  private coyoteMs       = 0;
+  private jumpBufferMs   = 0;
   private dashCooldownMs = 0;
-  private dashActiveMs  = 0;
+  private dashActiveMs   = 0;
   private wallJumpLockMs = 0;
-  private hasDoubleJump = true;
-  private dashWasUsed   = false;
+  private hasDoubleJump  = true;
+  private dashWasUsed    = false;
   private wallSide: -1 | 0 | 1 = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -57,9 +74,49 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     body.setMaxVelocityY(MAX_FALL);
   }
 
+  startInvincible(ms: number): void {
+    this.isInvincible = true;
+    this.invincibleMs = ms;
+    this.setAlpha(1);
+  }
+
+  applySpeedBoost(ms: number): void {
+    this.speedBoostMs = ms;
+  }
+
   fixedUpdate(dt: number, input: InputSnapshot): void {
-    const body     = this.body as Phaser.Physics.Arcade.Body;
+    const body      = this.body as Phaser.Physics.Arcade.Body;
     const worldGrav = (this.scene.physics.world as Phaser.Physics.Arcade.World).gravity.y;
+
+    // ── Combat timers ──────────────────────────────────────────────────────────
+    this.attackCooldownMs = Math.max(0, this.attackCooldownMs - dt);
+    this.speedBoostMs     = Math.max(0, this.speedBoostMs - dt);
+
+    if (this.attackActiveMs > 0) {
+      this.attackActiveMs -= dt;
+      if (this.attackActiveMs <= 0) {
+        this.isAttacking = false;
+        this.clearTint();
+      }
+    }
+
+    if (this.invincibleMs > 0) {
+      this.invincibleMs -= dt;
+      // Blink: toggle alpha every ~80 ms
+      this.setAlpha(Math.floor(this.invincibleMs / 80) % 2 === 0 ? 1 : 0.3);
+      if (this.invincibleMs <= 0) {
+        this.isInvincible = false;
+        this.setAlpha(1);
+      }
+    }
+
+    // ── Initiate attack ────────────────────────────────────────────────────────
+    if (input.attackPressed && this.attackCooldownMs <= 0 && !this.isAttacking) {
+      this.isAttacking      = true;
+      this.attackActiveMs   = ATTACK_DURATION;
+      this.attackCooldownMs = ATTACK_COOLDOWN;
+      this.setTint(0xffffff); // white flash to signal attack
+    }
 
     // ── Physics contact ────────────────────────────────────────────────────────
     const onGround    = body.blocked.down;
@@ -90,7 +147,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
       // Dash ended
       body.setAllowGravity(true);
-      // Fall through to normal state logic
     }
 
     // ── Initiate dash ──────────────────────────────────────────────────────────
@@ -99,11 +155,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       body.setVelocityX(DASH_SPEED * dir);
       body.setVelocityY(0);
       body.setAllowGravity(false);
-      this.facing        = dir;
-      this.dashActiveMs  = DASH_DURATION;
+      this.facing         = dir;
+      this.dashActiveMs   = DASH_DURATION;
       this.dashCooldownMs = DASH_COOLDOWN;
-      this.dashWasUsed   = true;
-      this.playerState   = 'dash';
+      this.dashWasUsed    = true;
+      this.playerState    = 'dash';
       return;
     }
 
@@ -112,10 +168,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const dir = (-this.wallSide) as 1 | -1;
       body.setVelocityX(WALL_JUMP_VX * dir);
       body.setVelocityY(WALL_JUMP_VY);
-      this.facing          = dir;
-      this.coyoteMs        = 0;
-      this.jumpBufferMs    = 0;
-      this.wallJumpLockMs  = WALL_JUMP_LOCK;
+      this.facing         = dir;
+      this.coyoteMs       = 0;
+      this.jumpBufferMs   = 0;
+      this.wallJumpLockMs = WALL_JUMP_LOCK;
     }
     // ── Regular jump (coyote window) ───────────────────────────────────────────
     else if (this.jumpBufferMs > 0 && this.coyoteMs > 0) {
@@ -136,12 +192,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // ── Horizontal movement ────────────────────────────────────────────────────
-    const inputDir = input.right ? 1 : input.left ? -1 : 0;
+    const inputDir       = input.right ? 1 : input.left ? -1 : 0;
+    const effectiveSpeed = this.speedBoostMs > 0 ? WALK_SPEED * SPEED_BOOST_MUL : WALK_SPEED;
 
     if (inputDir !== 0 && this.wallJumpLockMs <= 0) {
       this.facing = inputDir as 1 | -1;
       const accel = onGround ? ACCEL : AIR_ACCEL;
-      body.setVelocityX(moveTowards(body.velocity.x, inputDir * WALK_SPEED, accel * dt / 1000));
+      body.setVelocityX(moveTowards(body.velocity.x, inputDir * effectiveSpeed, accel * dt / 1000));
     } else {
       const decel = onGround ? FRICTION : AIR_FRICTION;
       body.setVelocityX(moveTowards(body.velocity.x, 0, decel * dt / 1000));
@@ -151,11 +208,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const wouldWallSlide = onWall && body.velocity.y > 0;
 
     if (wouldWallSlide) {
-      // Nearly cancel world gravity while on wall
       body.setGravityY(-worldGrav * 0.88);
       body.setVelocityY(Math.min(body.velocity.y, WALL_SLIDE_VY));
     } else if (body.velocity.y > 0) {
-      // Extra fall gravity — snappier arc
       body.setGravityY(worldGrav * (FAST_FALL_MUL - 1));
     } else {
       body.setGravityY(0);
