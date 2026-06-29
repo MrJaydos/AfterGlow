@@ -49,7 +49,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setSize(24, 44);
     body.setMaxVelocityY(MAX_FALL);
-    body.setCollideWorldBounds(true);
 
     this.postFX.addGlow(0x00f0ff, 12, 2);
   }

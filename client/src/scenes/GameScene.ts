@@ -6,7 +6,7 @@ import { buildTestLevel } from '../levels/TestLevel';
 import { PALETTE } from '../gfx/palette';
 
 export class GameScene extends Phaser.Scene {
-  private input!: InputSystem;
+  private inputSystem!: InputSystem;
   private player!: Player;
   private accumulator = 0;
   private spawnX = 80;
@@ -53,8 +53,8 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
 
-    // Input
-    this.input = new InputSystem(this);
+    // Input — stored as inputSystem to avoid shadowing Phaser.Scene.input
+    this.inputSystem = new InputSystem(this);
 
     // Debug overlay (DEV only — removed via tree shaking in prod since import.meta.env.DEV)
     if (import.meta.env.DEV) {
@@ -67,7 +67,7 @@ export class GameScene extends Phaser.Scene {
     this.accumulator += delta;
 
     while (this.accumulator >= FIXED_DT_MS) {
-      const snap = this.input.snapshot();
+      const snap = this.inputSystem.snapshot();
       this.player.fixedUpdate(FIXED_DT_MS, snap);
       this.accumulator -= FIXED_DT_MS;
     }
@@ -95,10 +95,7 @@ export class GameScene extends Phaser.Scene {
     for (let y = 0; y <= WORLD_H; y += step) {
       g.lineBetween(0, y, WORLD_W, y);
     }
-    g.setDepth(-9);
-    // Scroll at half speed (cheap parallax)
-    this.cameras.main.ignore(g);
-    this.add.existing(g).setScrollFactor(0.4, 0.4);
+    g.setDepth(-9).setScrollFactor(0.4, 0.4);
   }
 
   private buildDebugHUD(): void {
