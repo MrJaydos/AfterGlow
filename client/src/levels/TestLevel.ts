@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE } from '../gfx/palette';
-import { WORLD_W, WORLD_H } from '../constants';
+import { WORLD_W } from '../constants';
 
 export interface LevelData {
   platforms: Phaser.Physics.Arcade.StaticGroup;
@@ -12,14 +12,7 @@ const FLOOR_Y = 672;
 const FLOOR_H = 48;
 
 export function buildTestLevel(scene: Phaser.Scene): LevelData {
-  // 1×1 white pixel texture used for all platform tiles (tinted + scaled)
-  if (!scene.textures.exists('pixel')) {
-    const g = scene.make.graphics({}, false);
-    g.fillStyle(0xffffff, 1);
-    g.fillRect(0, 0, 1, 1);
-    g.generateTexture('pixel', 1, 1);
-    g.destroy();
-  }
+  // 'pixel' texture is created in GameScene.create() before this is called
 
   const group = scene.physics.add.staticGroup();
 

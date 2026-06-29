@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { FIXED_DT_MS, WORLD_W, WORLD_H, WORLD_GRAVITY } from '../constants';
+import { FIXED_DT_MS, WORLD_W, WORLD_H } from '../constants';
 import { InputSystem } from '../systems/InputSystem';
 import { Player } from '../entities/Player';
 import { buildTestLevel } from '../levels/TestLevel';
@@ -16,15 +16,12 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'Game' });
   }
 
-  preload(): void { /* textures generated in create() after renderer is ready */ }
+  preload(): void { /* no file assets; textures built in create() */ }
 
   create(): void {
-    // Player texture — generated here so the renderer is guaranteed to be ready
-    const pg = this.add.graphics();
-    pg.fillStyle(PALETTE.PLAYER, 1);
-    pg.fillRect(0, 0, 24, 44);
-    pg.generateTexture('player-tex', 24, 44);
-    pg.destroy();
+    // Canvas textures — reliable in both WebGL and Canvas mode, no framebuffer dependency
+    this.makeCanvasTex('player-tex', 24, 44, '#00f0ff');
+    this.makeCanvasTex('pixel',       1,  1, '#ffffff');
 
     // World bounds
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -79,6 +76,15 @@ export class GameScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.reset(this.spawnX, this.spawnY);
     body.setVelocity(0, 0);
+  }
+
+  /** Creates a solid-color CanvasTexture — works synchronously with no renderer state needed. */
+  private makeCanvasTex(key: string, w: number, h: number, color: string): void {
+    if (this.textures.exists(key)) return;
+    const tex = this.textures.createCanvas(key, w, h);
+    tex.context.fillStyle = color;
+    tex.context.fillRect(0, 0, w, h);
+    tex.refresh();
   }
 
   private buildGrid(): void {
