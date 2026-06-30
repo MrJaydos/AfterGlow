@@ -8,10 +8,11 @@ import { Enemy } from '../entities/Enemy';
 import { LEVEL_REGISTRY, DEFAULT_LEVEL_ID } from '../levels/LevelRegistry';
 import type { Checkpoint } from '../levels/types';
 import { PALETTE, toHex } from '../gfx/palette';
+import { buildParallax } from '../gfx/ParallaxBg';
 
 // Melee hit range (player-center to enemy-center in world units)
-const ATTACK_RANGE_X = 68; // px in the facing direction (and a little behind)
-const ATTACK_RANGE_Y = 44; // px above/below
+const ATTACK_RANGE_X = 68;
+const ATTACK_RANGE_Y = 44;
 
 type RunPhase = 'waiting' | 'running' | 'finished';
 
@@ -20,7 +21,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private timer!: TimerSystem;
   private accumulator = 0;
-  private hitstopMs   = 0; // freeze-frame when enemy dies
+  private hitstopMs   = 0;
 
   // Level data
   private spawnX = 80;
@@ -42,6 +43,10 @@ export class GameScene extends Phaser.Scene {
   private activeSpawnX = 0;
   private activeSpawnY = 0;
 
+  // ── Phase 5: visual state ────────────────────────────────────────────────────
+  private cameraLookaheadX   = 0;  // smooth camera-ahead offset
+  private playerPrevAirborne = false;
+
   // HUD objects
   private timerText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
@@ -59,14 +64,16 @@ export class GameScene extends Phaser.Scene {
   preload(): void { /* no file assets */ }
 
   create(): void {
-    this.accumulator        = 0;
-    this.hitstopMs          = 0;
-    this.runPhase           = 'waiting';
-    this.deaths             = 0;
-    this.checkpointRespawns = 0;
-    this.activeCheckpointId = 0;
-    this.coinsCollected     = 0;
-    this.enemies            = [];
+    this.accumulator          = 0;
+    this.hitstopMs            = 0;
+    this.runPhase             = 'waiting';
+    this.deaths               = 0;
+    this.checkpointRespawns   = 0;
+    this.activeCheckpointId   = 0;
+    this.coinsCollected       = 0;
+    this.enemies              = [];
+    this.cameraLookaheadX     = 0;
+    this.playerPrevAirborne   = false;
 
     // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
@@ -78,11 +85,17 @@ export class GameScene extends Phaser.Scene {
     // ── Physics world ─────────────────────────────────────────────────────────
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
 
-    // ── Background ────────────────────────────────────────────────────────────
+    // ── Background + parallax ─────────────────────────────────────────────────
+    // Base dark gradient fills the world behind everything (depth -20)
     const bg = this.add.graphics();
     bg.fillGradientStyle(PALETTE.BG_TOP, PALETTE.BG_TOP, PALETTE.BG_BOTTOM, PALETTE.BG_BOTTOM, 1);
     bg.fillRect(0, 0, WORLD_W, WORLD_H);
-    bg.setDepth(-10);
+    bg.setDepth(-20);
+
+    // Three-layer parallax: stars (-19), horizon (-18), city (-17)
+    buildParallax(this);
+
+    // Dim world grid (behind platforms but in front of parallax)
     this.buildGrid();
 
     // ── Level ─────────────────────────────────────────────────────────────────
@@ -97,7 +110,6 @@ export class GameScene extends Phaser.Scene {
     this.activeSpawnX = this.spawnX;
     this.activeSpawnY = this.spawnY;
 
-    // Enemy references — plain array, no physics group interference
     this.enemies = level.enemies;
 
     // ── Player ────────────────────────────────────────────────────────────────
@@ -105,25 +117,38 @@ export class GameScene extends Phaser.Scene {
     this.player.setDepth(5);
     this.physics.add.collider(this.player, level.platforms);
 
-    // ── Collectible overlaps (coins + powerups use StaticGroups — safe) ───────
+    // Selective glow on player (WebGL only — postFX is null in Canvas mode)
+    this.player.postFX?.addGlow(PALETTE.PLAYER, 8, 0, false, 0.1, 20);
+
+    // ── Collectible overlaps ───────────────────────────────────────────────────
     this.physics.add.overlap(
       this.player, level.coins,
       (_p, coin) => { this.onCoinCollect(coin as Phaser.Physics.Arcade.Image); },
     );
-
     this.physics.add.overlap(
       this.player, level.powerups,
-      (_p, pu) => { this.onPowerupCollect(pu as Phaser.Physics.Arcade.Image); },
+      (_p, pu)   => { this.onPowerupCollect(pu as Phaser.Physics.Arcade.Image); },
     );
 
-    // Enemy contact is checked manually each fixed tick (see checkEnemyContact)
-    // to avoid physics group issues that reset enemy body gravity.
+    // Glow on collectibles
+    level.coins.getChildren().forEach(c => {
+      (c as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.COIN, 4, 0, false, 0.1, 10);
+    });
+    level.powerups.getChildren().forEach(p => {
+      (p as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.POWERUP_VIOLET, 5, 0, false, 0.1, 12);
+    });
+
+    // Pulsing finish-zone glow overlay
+    const fGlow = this.add.rectangle(this.finishLineX + 80, WORLD_H - 24, 160, 48, PALETTE.FINISH_LIME, 0.12)
+      .setDepth(3);
+    this.tweens.add({
+      targets: fGlow, alpha: 0.04, duration: 900,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+    fGlow.postFX?.addGlow(PALETTE.FINISH_LIME, 10, 0, false, 0.1, 22);
 
     // ── Camera ────────────────────────────────────────────────────────────────
-    // Viewport is 550 px tall (not the full 720) so the bottom 170 px of the
-    // canvas is a touch-button zone that never overlaps gameplay.
-    // Button centres sit at y=644 (radius 54 → top edge y=590), safely below
-    // the 550 px viewport boundary.
+    // Viewport 550 px tall — bottom 170 px is the touch-button safe zone.
     this.cameras.main.setViewport(0, 0, 1280, 550);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -139,23 +164,59 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.runPhase === 'finished') return;
 
-    // Hitstop: freeze everything for a brief flash when killing an enemy
+    // ── Camera lookahead (render-rate — smooth interpolation) ─────────────────
+    const targetLookahead = this.player.playerState !== 'idle' && this.player.playerState !== 'wall_slide'
+      ? this.player.facing * 160 : 0;
+    this.cameraLookaheadX += (targetLookahead - this.cameraLookaheadX) * 0.06;
+    this.cameras.main.setFollowOffset(-Math.round(this.cameraLookaheadX), 0);
+
+    // ── Hitstop: freeze frame on enemy kill ───────────────────────────────────
     if (this.hitstopMs > 0) {
       this.hitstopMs -= delta;
       return;
     }
 
-    // Fixed-timestep accumulator
+    // ── Fixed-timestep accumulator ────────────────────────────────────────────
     this.accumulator += delta;
     while (this.accumulator >= FIXED_DT_MS) {
       const snap = this.inputSystem.snapshot();
       this.player.fixedUpdate(FIXED_DT_MS, snap);
+
       for (const e of this.enemies) {
         if (e.active) e.fixedUpdate(FIXED_DT_MS);
       }
+
       this.timer.tick(FIXED_DT_MS);
       this.checkAttacks();
       this.checkEnemyContact();
+
+      // ── Phase 5: squash-and-stretch ────────────────────────────────────────
+      const isAirborne = this.player.playerState === 'airborne';
+      if (this.playerPrevAirborne && !isAirborne) {
+        // Just landed
+        this.tweens.killTweensOf(this.player);
+        this.tweens.add({
+          targets: this.player, scaleX: 1.4, scaleY: 0.65,
+          duration: 60, yoyo: true, ease: 'Sine.easeOut',
+        });
+      }
+      if (!this.playerPrevAirborne && isAirborne) {
+        const vy = (this.player.body as Phaser.Physics.Arcade.Body).velocity.y;
+        if (vy < -100) { // jumped upward (not walked off ledge)
+          this.tweens.killTweensOf(this.player);
+          this.tweens.add({
+            targets: this.player, scaleX: 0.72, scaleY: 1.35,
+            duration: 80, yoyo: true, ease: 'Sine.easeOut',
+          });
+        }
+      }
+      this.playerPrevAirborne = isAirborne;
+
+      // ── Phase 5: dash afterimages ──────────────────────────────────────────
+      if (this.player.playerState === 'dash') {
+        this.spawnDashGhost();
+      }
+
       this.accumulator -= FIXED_DT_MS;
     }
 
@@ -191,7 +252,7 @@ export class GameScene extends Phaser.Scene {
     this.boostText.setVisible(this.player.speedBoostMs > 0);
   }
 
-  // ── Combat ───────────────────────────────────────────────────────────────────
+  // ── Combat ────────────────────────────────────────────────────────────────────
 
   private checkAttacks(): void {
     if (!this.player.isAttacking) return;
@@ -202,7 +263,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const e of this.enemies) {
       if (!e.active) continue;
-      const dx = (e.x - px) * f; // positive = enemy is in front of player
+      const dx = (e.x - px) * f;
       const dy = Math.abs(e.y - py);
       if (dx > -20 && dx < ATTACK_RANGE_X && dy < ATTACK_RANGE_Y) {
         this.killEnemy(e);
@@ -217,27 +278,29 @@ export class GameScene extends Phaser.Scene {
     for (const e of this.enemies) {
       if (!e.active) continue;
       const eb = e.body as Phaser.Physics.Arcade.Body;
-      // AABB overlap test
       if (pb.right > eb.left && pb.left < eb.right &&
           pb.bottom > eb.top && pb.top < eb.bottom) {
         this.onDeath();
-        return; // one death per tick is enough
+        return;
       }
     }
   }
 
   private killEnemy(e: Enemy): void {
+    this.spawnBurst(e.x, e.y, 'pixel', PALETTE.DANGER_RED, 12, 5);
     e.destroy();
     this.hitstopMs = 80;
   }
 
   private onCoinCollect(coin: Phaser.Physics.Arcade.Image): void {
+    this.spawnBurst(coin.x, coin.y, 'coin-tex', PALETTE.COIN, 8, 0.8);
     coin.destroy();
     this.coinsCollected++;
     this.coinText.setText(`COINS  ${this.coinsCollected}`);
   }
 
   private onPowerupCollect(pu: Phaser.Physics.Arcade.Image): void {
+    this.spawnBurst(pu.x, pu.y, 'powerup-tex', PALETTE.POWERUP_VIOLET, 10, 1);
     pu.destroy();
     this.player.applySpeedBoost(5000);
   }
@@ -258,6 +321,11 @@ export class GameScene extends Phaser.Scene {
 
   private onDeath(): void {
     this.deaths++;
+
+    // Screen shake + red flash
+    this.cameras.main.shake(180, 0.012);
+    this.spawnDeathFlash();
+
     if (this.deathMode === 'reset') {
       this.runPhase           = 'waiting';
       this.activeCheckpointId = 0;
@@ -271,7 +339,6 @@ export class GameScene extends Phaser.Scene {
       this.checkpointRespawns++;
       this.doRespawn(this.activeSpawnX, this.activeSpawnY);
     }
-    // Grace iframes so the player doesn't instantly die again on respawn
     this.player.startInvincible(1200);
   }
 
@@ -279,6 +346,48 @@ export class GameScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.reset(x, y);
     body.setVelocity(0, 0);
+    // Reset any squash/stretch tween so the player respawns at normal scale
+    this.tweens.killTweensOf(this.player);
+    this.player.setScale(1, 1);
+  }
+
+  // ── Phase 5: effects ─────────────────────────────────────────────────────────
+
+  private spawnDashGhost(): void {
+    const g = this.add.image(this.player.x, this.player.y, 'player-tex');
+    g.setAlpha(0.55)
+     .setTint(PALETTE.PLAYER)
+     .setDepth(4)
+     .setFlipX(this.player.flipX)
+     .setScale(this.player.scaleX, this.player.scaleY);
+    this.tweens.add({
+      targets: g, alpha: 0, scaleX: g.scaleX * 0.55,
+      duration: 160, ease: 'Linear',
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  private spawnBurst(x: number, y: number, tex: string, tint: number, count: number, scale: number): void {
+    const em = this.add.particles(x, y, tex, {
+      speed:   { min: 55, max: 210 },
+      angle:   { min: 0, max: 360 },
+      scale:   { start: scale, end: 0 },
+      tint,
+      lifespan: 380,
+      emitting: false,
+    }).setDepth(6);
+    em.explode(count);
+    this.time.delayedCall(460, () => { if (em?.active) em.destroy(); });
+  }
+
+  private spawnDeathFlash(): void {
+    // Red overlay fills the camera viewport (scrollFactor 0)
+    const flash = this.add.rectangle(640, 275, 1280, 550, PALETTE.DANGER_RED, 0.28)
+      .setScrollFactor(0).setDepth(190);
+    this.tweens.add({
+      targets: flash, alpha: 0, duration: 250,
+      ease: 'Quad.easeOut', onComplete: () => flash.destroy(),
+    });
   }
 
   // ── HUD / UI ──────────────────────────────────────────────────────────────────
@@ -313,7 +422,7 @@ export class GameScene extends Phaser.Scene {
       fontSize: '14px', fontFamily: 'monospace', color: toHex(PALETTE.POWERUP_VIOLET),
     }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 0).setVisible(false);
 
-    // Finish overlay — plain objects, no Container
+    // Finish overlay
     this.finishBg = this.add.rectangle(640, 360, 1280, 720, 0x000000, 0.7)
       .setScrollFactor(0).setDepth(200).setVisible(false);
 
@@ -338,7 +447,6 @@ export class GameScene extends Phaser.Scene {
     this.finishTimeLabel.setVisible(true);
     this.finishHint.setVisible(true);
 
-    // Restart on any key (desktop) or any tap (mobile)
     this.input.keyboard!.once('keydown', () => { this.scene.restart(); });
     this.input.once('pointerdown',       () => { this.scene.restart(); });
   }
@@ -366,10 +474,11 @@ export class GameScene extends Phaser.Scene {
 
   private buildGrid(): void {
     const g = this.add.graphics();
-    g.lineStyle(1, PALETTE.GRID_LINE, 0.2);
+    g.lineStyle(1, PALETTE.GRID_LINE, 0.18);
     const step = 80;
     for (let x = 0; x <= WORLD_W; x += step) g.lineBetween(x, 0, x, WORLD_H);
     for (let y = 0; y <= WORLD_H; y += step) g.lineBetween(0, y, WORLD_W, y);
-    g.setDepth(-9).setScrollFactor(0.4, 0.4);
+    // depth -15: above parallax layers (-17,-18,-19) but below platforms (0)
+    g.setDepth(-15).setScrollFactor(0.4, 0.4);
   }
 }
