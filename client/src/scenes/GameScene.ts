@@ -9,6 +9,9 @@ import { LEVEL_REGISTRY, DEFAULT_LEVEL_ID } from '../levels/LevelRegistry';
 import type { Checkpoint } from '../levels/types';
 import { PALETTE, toHex } from '../gfx/palette';
 import { buildParallax } from '../gfx/ParallaxBg';
+import { GhostRecorder } from '../systems/GhostRecorder';
+import { GhostPlayer } from '../systems/GhostPlayer';
+import { GhostManager } from '../systems/GhostManager';
 
 // Melee hit range (player-center to enemy-center in world units)
 const ATTACK_RANGE_X = 68;
@@ -43,9 +46,17 @@ export class GameScene extends Phaser.Scene {
   private activeSpawnX = 0;
   private activeSpawnY = 0;
 
+  // Level identity (needed by ghost recorder)
+  private levelId!: string;
+  private levelVersion!: string;
+
   // ── Phase 5: visual state ────────────────────────────────────────────────────
-  private cameraLookaheadX   = 0;  // smooth camera-ahead offset
+  private cameraLookaheadX   = 0;
   private playerPrevAirborne = false;
+
+  // ── Phase 6: ghost recording & playback ──────────────────────────────────────
+  private recorder:    GhostRecorder | null = null;
+  private ghostPlayer: GhostPlayer   | null = null;
 
   // HUD objects
   private timerText!: Phaser.GameObjects.Text;
@@ -74,6 +85,8 @@ export class GameScene extends Phaser.Scene {
     this.enemies              = [];
     this.cameraLookaheadX     = 0;
     this.playerPrevAirborne   = false;
+    this.recorder             = null;
+    this.ghostPlayer          = null;
 
     // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
@@ -100,6 +113,8 @@ export class GameScene extends Phaser.Scene {
 
     // ── Level ─────────────────────────────────────────────────────────────────
     const def   = LEVEL_REGISTRY[DEFAULT_LEVEL_ID];
+    this.levelId      = def.meta.levelId;
+    this.levelVersion = def.meta.version;
     const level = def.build(this);
 
     this.spawnX       = level.spawnX;
@@ -147,6 +162,17 @@ export class GameScene extends Phaser.Scene {
     });
     fGlow.postFX?.addGlow(PALETTE.FINISH_LIME, 10, 0, false, 0.1, 22);
 
+    // ── Ghost player (load PB ghost from localStorage, async decode) ──────────
+    const savedBlob = GhostManager.load(this.levelId);
+    if (savedBlob) {
+      GhostPlayer.fromBlob(this, savedBlob).then(gp => {
+        this.ghostPlayer = gp;
+      }).catch(() => {
+        // Corrupt or incompatible blob — clear it so we don't error again
+        GhostManager.clear(this.levelId);
+      });
+    }
+
     // ── Camera ────────────────────────────────────────────────────────────────
     // Viewport 550 px tall — bottom 170 px is the touch-button safe zone.
     this.cameras.main.setViewport(0, 0, 1280, 550);
@@ -163,6 +189,13 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.runPhase === 'finished') return;
+
+    // ── Ghost render (render-rate interpolation) ──────────────────────────────
+    if (this.ghostPlayer && this.runPhase === 'running') {
+      this.ghostPlayer.updateRender(this.timer.elapsed, this.player.x);
+    } else if (this.ghostPlayer && this.runPhase !== 'running') {
+      this.ghostPlayer.hide();
+    }
 
     // ── Camera lookahead (render-rate — smooth interpolation) ─────────────────
     const targetLookahead = this.player.playerState !== 'idle' && this.player.playerState !== 'wall_slide'
@@ -215,6 +248,11 @@ export class GameScene extends Phaser.Scene {
       // ── Phase 5: dash afterimages ──────────────────────────────────────────
       if (this.player.playerState === 'dash') {
         this.spawnDashGhost();
+      }
+
+      // ── Phase 6: record ghost frame ────────────────────────────────────────
+      if (this.runPhase === 'running' && this.recorder) {
+        this.recorder.record(this.player.x, this.player.y, this.player.facing);
       }
 
       this.accumulator -= FIXED_DT_MS;
@@ -311,11 +349,24 @@ export class GameScene extends Phaser.Scene {
     this.runPhase = 'running';
     this.timer.start();
     this.statusText.setVisible(false);
+    this.recorder = new GhostRecorder(this.levelId, this.levelVersion);
   }
 
   private finishRun(): void {
     this.runPhase = 'finished';
     this.timer.stop();
+
+    // Encode and save ghost if it's a new PB (async — happens in background)
+    if (this.recorder) {
+      const finalTimeMs = this.timer.elapsed;
+      const rec = this.recorder;
+      this.recorder = null;
+      rec.encode().then(blob => {
+        GhostManager.save(blob, finalTimeMs);
+      });
+    }
+
+    if (this.ghostPlayer) this.ghostPlayer.hide();
     this.showFinishScreen();
   }
 
@@ -440,8 +491,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showFinishScreen(): void {
-    const coinSuffix = this.coinsCollected > 0 ? `  ·  ${this.coinsCollected} coins` : '';
-    this.finishTimeLabel.setText(this.timer.format() + coinSuffix);
+    const coinSuffix  = this.coinsCollected > 0 ? `  ·  ${this.coinsCollected} coins` : '';
+    // Show ghost comparison if one was loaded
+    const ghostBlob   = GhostManager.load(this.levelId);
+    const ghostSuffix = ghostBlob
+      ? `\nGHOST  ${this.formatMs(GhostManager.ghostTimeMs(ghostBlob))}`
+      : '';
+    this.finishTimeLabel.setText(this.timer.format() + coinSuffix + ghostSuffix);
     this.finishBg.setVisible(true);
     this.finishTitle.setVisible(true);
     this.finishTimeLabel.setVisible(true);
@@ -452,6 +508,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  private formatMs(ms: number): string {
+    const total = Math.floor(ms);
+    const m  = Math.floor(total / 60_000);
+    const s  = Math.floor((total % 60_000) / 1_000);
+    const ms2 = total % 1_000;
+    return `${m}:${s.toString().padStart(2, '0')}.${ms2.toString().padStart(3, '0')}`;
+  }
 
   private makeCanvasTex(key: string, w: number, h: number, color: string): void {
     if (this.textures.exists(key)) return;
