@@ -3,6 +3,8 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
 import { healthRoutes } from './routes/health';
+import { runRoutes } from './routes/runs';
+import { initDb } from './db/index';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
@@ -21,6 +23,9 @@ process.on('unhandledRejection', (reason) => {
 async function start(): Promise<void> {
   console.log(`[afterglow] Starting — NODE_ENV=${NODE_ENV} PORT=${PORT}`);
 
+  // Init DB + run migrations before accepting traffic
+  initDb();
+
   const server = Fastify({
     logger: { level: 'info' },
   });
@@ -30,6 +35,7 @@ async function start(): Promise<void> {
   });
 
   await server.register(healthRoutes);
+  await server.register(runRoutes);
 
   // In production, serve the Vite-built client from server/public
   if (NODE_ENV !== 'development') {

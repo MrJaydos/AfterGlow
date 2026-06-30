@@ -12,6 +12,7 @@ import { buildParallax } from '../gfx/ParallaxBg';
 import { GhostRecorder } from '../systems/GhostRecorder';
 import { GhostPlayer } from '../systems/GhostPlayer';
 import { GhostManager } from '../systems/GhostManager';
+import { LeaderboardOverlay } from '../ui/LeaderboardOverlay';
 
 // Melee hit range (player-center to enemy-center in world units)
 const ATTACK_RANGE_X = 68;
@@ -368,6 +369,18 @@ export class GameScene extends Phaser.Scene {
 
     if (this.ghostPlayer) this.ghostPlayer.hide();
     this.showFinishScreen();
+    // Disable Phaser keyboard so typing a name in the overlay doesn't trigger scene restart
+    if (this.input.keyboard) this.input.keyboard.enabled = false;
+    // Show DOM leaderboard overlay after a short pause so the Phaser finish screen is visible first
+    this.time.delayedCall(600, () => {
+      new LeaderboardOverlay({
+        finalTimeMs:    this.timer.elapsed,
+        coinsCollected: this.coinsCollected,
+        levelId:        this.levelId,
+        levelVersion:   this.levelVersion,
+        onRestart:      () => { this.scene.restart(); },
+      });
+    });
   }
 
   private onDeath(): void {
@@ -485,7 +498,7 @@ export class GameScene extends Phaser.Scene {
       fontSize: '44px', fontFamily: 'monospace', color: '#ffffff',
     }).setScrollFactor(0).setDepth(201).setOrigin(0.5).setVisible(false);
 
-    this.finishHint = this.add.text(640, 440, 'press any key to restart', {
+    this.finishHint = this.add.text(640, 440, 'leaderboard loading…', {
       fontSize: '16px', fontFamily: 'monospace', color: toHex(PALETTE.PLATFORM_GLOW),
     }).setScrollFactor(0).setDepth(201).setOrigin(0.5).setAlpha(0.7).setVisible(false);
   }
@@ -503,8 +516,7 @@ export class GameScene extends Phaser.Scene {
     this.finishTimeLabel.setVisible(true);
     this.finishHint.setVisible(true);
 
-    this.input.keyboard!.once('keydown', () => { this.scene.restart(); });
-    this.input.once('pointerdown',       () => { this.scene.restart(); });
+    // Restart is handled by the LeaderboardOverlay's "Play Again" button.
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
