@@ -124,7 +124,7 @@ export class GameScene extends Phaser.Scene {
     // canvas is a touch-button zone that never overlaps gameplay.
     // Button centres sit at y=644 (radius 54 → top edge y=590), safely below
     // the 550 px viewport boundary.
-    this.cameras.main.setViewport(0, 0, WORLD_W, 550);
+    this.cameras.main.setViewport(0, 0, 1280, 550);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
