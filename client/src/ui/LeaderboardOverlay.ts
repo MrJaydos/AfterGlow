@@ -60,6 +60,7 @@ export class LeaderboardOverlay {
         </div>
 
         <button id="lb-restart" style="${styleStr(STYLES.restartBtn)}">▶  PLAY AGAIN</button>
+        <a id="lb-home" href="https://games.alfi3.com" style="${styleStr(STYLES.homeBtn)}">←  MORE GAMES</a>
       </div>
     `;
   }
@@ -258,5 +259,20 @@ const STYLES: Record<string, Record<string, string>> = {
     'border-radius': '3px',
     width: '100%',
     'letter-spacing': '2px',
+  },
+  homeBtn: {
+    display: 'block',
+    'text-align': 'center',
+    'text-decoration': 'none',
+    background: 'transparent',
+    border: 'none',
+    color: '#6060cc',
+    'font-family': 'monospace',
+    'font-size': '12px',
+    padding: '10px 18px 0',
+    cursor: 'pointer',
+    width: '100%',
+    'letter-spacing': '2px',
+    opacity: '0.7',
   },
 };

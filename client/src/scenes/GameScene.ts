@@ -181,6 +181,10 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     // ── Systems ───────────────────────────────────────────────────────────────
+    // finishRun() disables the keyboard so typing a name in the leaderboard
+    // overlay can't trigger a restart. That flag persists across scene.restart(),
+    // so re-enable it here or a fresh run would have dead keyboard input.
+    if (this.input.keyboard) this.input.keyboard.enabled = true;
     this.inputSystem = new InputSystem(this);
     this.timer       = new TimerSystem();
 
