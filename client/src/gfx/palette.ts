@@ -29,6 +29,17 @@ export const PALETTE = {
   GHOST_DEFAULT: 0xff66ff,
 } as const;
 
+/**
+ * Distinct hues assigned to raced ghosts in order (own PB first, then rivals).
+ * Kept clear of player cyan and danger red so ghosts never read as hazards.
+ */
+export const GHOST_HUES = [
+  0xff66ff, // magenta
+  0xffaa33, // amber
+  0x66ffcc, // mint
+  0xa066ff, // violet
+] as const;
+
 export type PaletteKey = keyof typeof PALETTE;
 export type PaletteColor = (typeof PALETTE)[PaletteKey];
 

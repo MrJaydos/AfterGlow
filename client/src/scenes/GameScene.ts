@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { DeathMode } from '@afterglow/shared';
+import type { DeathMode, GhostBlob, GhostRaceResponse } from '@afterglow/shared';
 import { FIXED_DT_MS, WORLD_W, WORLD_H } from '../constants';
 import { InputSystem } from '../systems/InputSystem';
 import { TimerSystem } from '../systems/TimerSystem';
@@ -7,7 +7,7 @@ import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { LEVEL_REGISTRY, DEFAULT_LEVEL_ID } from '../levels/LevelRegistry';
 import type { Checkpoint } from '../levels/types';
-import { PALETTE, toHex } from '../gfx/palette';
+import { PALETTE, GHOST_HUES, toHex } from '../gfx/palette';
 import { buildParallax } from '../gfx/ParallaxBg';
 import { GhostRecorder } from '../systems/GhostRecorder';
 import { GhostPlayer } from '../systems/GhostPlayer';
@@ -56,8 +56,10 @@ export class GameScene extends Phaser.Scene {
   private playerPrevAirborne = false;
 
   // ── Phase 6: ghost recording & playback ──────────────────────────────────────
-  private recorder:    GhostRecorder | null = null;
-  private ghostPlayer: GhostPlayer   | null = null;
+  private recorder:     GhostRecorder | null = null;
+  // ── Phase 8: race multiple ghosts (own PB + downloaded rivals) ────────────────
+  private ghostPlayers: GhostPlayer[] = [];
+  private pendingGhost: GhostBlob | null = null;
 
   // HUD objects
   private timerText!: Phaser.GameObjects.Text;
@@ -87,7 +89,8 @@ export class GameScene extends Phaser.Scene {
     this.cameraLookaheadX     = 0;
     this.playerPrevAirborne   = false;
     this.recorder             = null;
-    this.ghostPlayer          = null;
+    this.ghostPlayers         = [];
+    this.pendingGhost         = null;
 
     // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
@@ -163,16 +166,8 @@ export class GameScene extends Phaser.Scene {
     });
     fGlow.postFX?.addGlow(PALETTE.FINISH_LIME, 10, 0, false, 0.1, 22);
 
-    // ── Ghost player (load PB ghost from localStorage, async decode) ──────────
-    const savedBlob = GhostManager.load(this.levelId);
-    if (savedBlob) {
-      GhostPlayer.fromBlob(this, savedBlob).then(gp => {
-        this.ghostPlayer = gp;
-      }).catch(() => {
-        // Corrupt or incompatible blob — clear it so we don't error again
-        GhostManager.clear(this.levelId);
-      });
-    }
+    // ── Ghost racing (own PB from localStorage + downloaded rival ghosts) ─────
+    void this.loadGhosts();
 
     // ── Camera ────────────────────────────────────────────────────────────────
     // Viewport 550 px tall — bottom 170 px is the touch-button safe zone.
@@ -196,10 +191,10 @@ export class GameScene extends Phaser.Scene {
     if (this.runPhase === 'finished') return;
 
     // ── Ghost render (render-rate interpolation) ──────────────────────────────
-    if (this.ghostPlayer && this.runPhase === 'running') {
-      this.ghostPlayer.updateRender(this.timer.elapsed, this.player.x);
-    } else if (this.ghostPlayer && this.runPhase !== 'running') {
-      this.ghostPlayer.hide();
+    if (this.runPhase === 'running') {
+      for (const g of this.ghostPlayers) g.updateRender(this.timer.elapsed, this.player.x);
+    } else {
+      for (const g of this.ghostPlayers) g.hide();
     }
 
     // ── Camera lookahead (render-rate — smooth interpolation) ─────────────────
@@ -295,6 +290,56 @@ export class GameScene extends Phaser.Scene {
     this.boostText.setVisible(this.player.speedBoostMs > 0);
   }
 
+  // ── Phase 8: ghost racing ───────────────────────────────────────────────────
+
+  /**
+   * Build the ghost field for this run: your local PB first (distinct hue),
+   * then the fastest rival ghosts downloaded from the leaderboard. Capped at
+   * GHOST_HUES.length so the screen never fills with silhouettes. Decoding is
+   * async — ghosts pop in when ready; if the run already finished, stay hidden.
+   */
+  private async loadGhosts(): Promise<void> {
+    const MAX_GHOSTS = GHOST_HUES.length;
+    const clientId   = localStorage.getItem('ag_client_id') ?? '';
+    let   hueIdx     = 0;
+
+    // 1) Own PB from localStorage
+    const local = GhostManager.load(this.levelId);
+    if (local) {
+      try {
+        this.ghostPlayers.push(
+          await GhostPlayer.fromBlob(this, local, { tint: GHOST_HUES[hueIdx++], name: 'YOU (PB)' }),
+        );
+      } catch {
+        GhostManager.clear(this.levelId); // corrupt/stale — drop it
+      }
+    }
+
+    // 2) Rival ghosts from the server (skip our own client id — the PB covers it)
+    try {
+      const res = await fetch(`/api/ghosts/${this.levelId}?limit=${MAX_GHOSTS}`);
+      if (res.ok) {
+        const { entries } = await res.json() as GhostRaceResponse;
+        for (const e of entries) {
+          if (this.ghostPlayers.length >= MAX_GHOSTS) break;
+          if (e.playerClientId === clientId) continue;
+          try {
+            this.ghostPlayers.push(
+              await GhostPlayer.fromBlob(this, e.ghost, {
+                tint: GHOST_HUES[hueIdx++ % GHOST_HUES.length], name: e.playerName,
+              }),
+            );
+          } catch { /* skip a corrupt rival blob */ }
+        }
+      }
+    } catch { /* offline — race the local PB only */ }
+
+    // If the run finished (or reset) while we were loading, keep ghosts hidden.
+    if (this.runPhase !== 'running') {
+      for (const g of this.ghostPlayers) g.hide();
+    }
+  }
+
   // ── Combat ────────────────────────────────────────────────────────────────────
 
   private checkAttacks(): void {
@@ -361,27 +406,31 @@ export class GameScene extends Phaser.Scene {
     this.runPhase = 'finished';
     this.timer.stop();
 
-    // Encode and save ghost if it's a new PB (async — happens in background)
+    // Encode and save ghost if it's a new PB (async — happens in background).
+    // pendingGhost is handed to the overlay so the run's ghost is uploaded too.
     if (this.recorder) {
       const finalTimeMs = this.timer.elapsed;
       const rec = this.recorder;
       this.recorder = null;
       rec.encode().then(blob => {
+        this.pendingGhost = blob;
         GhostManager.save(blob, finalTimeMs);
       });
     }
 
-    if (this.ghostPlayer) this.ghostPlayer.hide();
+    for (const g of this.ghostPlayers) g.hide();
     this.showFinishScreen();
     // Disable Phaser keyboard so typing a name in the overlay doesn't trigger scene restart
     if (this.input.keyboard) this.input.keyboard.enabled = false;
-    // Show DOM leaderboard overlay after a short pause so the Phaser finish screen is visible first
+    // Show DOM leaderboard overlay after a short pause so the Phaser finish screen is visible
+    // first (the 600ms gap also gives the async ghost encode time to populate pendingGhost).
     this.time.delayedCall(600, () => {
       new LeaderboardOverlay({
         finalTimeMs:    this.timer.elapsed,
         coinsCollected: this.coinsCollected,
         levelId:        this.levelId,
         levelVersion:   this.levelVersion,
+        ghostBlob:      this.pendingGhost ?? undefined,
         onRestart:      () => { this.scene.restart(); },
       });
     });

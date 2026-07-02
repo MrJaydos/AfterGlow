@@ -13,6 +13,8 @@ export const runs = sqliteTable('runs', {
   checkpointRespawns: integer('checkpoint_respawns').notNull().default(0),
   isClean:            integer('is_clean', { mode: 'boolean' }).notNull().default(true),
   createdAt:          text('created_at').notNull(),
+  // Serialized GhostBlob (JSON string) for this run — nullable; enables ghost racing.
+  ghostBlob:          text('ghost_blob'),
 });
 
 export type Run = typeof runs.$inferSelect;

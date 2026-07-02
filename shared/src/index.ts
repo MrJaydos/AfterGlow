@@ -76,3 +76,16 @@ export interface SubmitRunResponse {
   rank: number;
   isClean: boolean;
 }
+
+/** One downloadable ghost from the leaderboard, for racing. */
+export interface GhostRaceEntry {
+  rank: number;
+  playerName: string;
+  playerClientId: string;
+  timeMs: number;
+  ghost: GhostBlob;
+}
+
+export interface GhostRaceResponse {
+  entries: GhostRaceEntry[];
+}

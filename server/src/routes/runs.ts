@@ -18,7 +18,7 @@ const submitBody = {
     deathMode:          { type: 'string', enum: ['reset', 'checkpoint'] },
     deaths:             { type: 'integer', minimum: 0, default: 0 },
     checkpointRespawns: { type: 'integer', minimum: 0, default: 0 },
-    ghostBlob:          { type: 'string' },
+    ghostBlob:          { type: 'string', maxLength: 300_000 },
   },
   additionalProperties: false,
 } as const;
@@ -91,6 +91,13 @@ interface LeaderboardRow {
   created_at: string;
 }
 
+interface GhostRow {
+  player_name: string;
+  player_client_id: string;
+  time_ms: number;
+  ghost_blob: string;
+}
+
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
 export async function runRoutes(server: FastifyInstance): Promise<void> {
@@ -117,6 +124,7 @@ export async function runRoutes(server: FastifyInstance): Promise<void> {
       checkpointRespawns: body.checkpointRespawns ?? 0,
       isClean,
       createdAt:          now,
+      ghostBlob:          body.ghostBlob ?? null,
     }).run();
 
     // Rank = number of faster clean runs + 1
@@ -161,6 +169,43 @@ export async function runRoutes(server: FastifyInstance): Promise<void> {
         isClean:            r.is_clean === 1,
         createdAt:          r.created_at,
       }));
+
+      return reply.send({ entries });
+    },
+  );
+
+  // GET /api/ghosts/:levelId — top clean runs' ghost blobs, for racing.
+  // One ghost per player (their fastest clean run that has a recorded blob).
+  server.get<{ Params: { levelId: string }; Querystring: { limit?: string } }>(
+    '/api/ghosts/:levelId',
+    async (req, reply) => {
+      const { levelId } = req.params;
+      const limit = Math.min(parseInt(req.query.limit ?? '4', 10), 8);
+
+      // SQLite: with MIN(time_ms) + GROUP BY, the bare columns (ghost_blob, …)
+      // come from the row holding the minimum — i.e. that player's fastest run.
+      const rows = sqlite.prepare(`
+        SELECT player_name, player_client_id, MIN(time_ms) as time_ms, ghost_blob
+        FROM runs
+        WHERE level_id = ? AND is_clean = 1 AND ghost_blob IS NOT NULL
+        GROUP BY player_client_id
+        ORDER BY time_ms ASC
+        LIMIT ?
+      `).all(levelId, limit) as GhostRow[];
+
+      const entries = rows.flatMap((r, i) => {
+        try {
+          return [{
+            rank:           i + 1,
+            playerName:     r.player_name,
+            playerClientId: r.player_client_id,
+            timeMs:         r.time_ms,
+            ghost:          JSON.parse(r.ghost_blob),
+          }];
+        } catch {
+          return []; // corrupt stored blob — skip it
+        }
+      });
 
       return reply.send({ entries });
     },

@@ -1,4 +1,4 @@
-import type { LeaderboardEntry } from '@afterglow/shared';
+import type { GhostBlob, LeaderboardEntry } from '@afterglow/shared';
 
 const STORAGE_KEY_NAME      = 'ag_player_name';
 const STORAGE_KEY_CLIENT_ID = 'ag_client_id';
@@ -8,6 +8,7 @@ interface Options {
   coinsCollected: number;
   levelId:        string;
   levelVersion:   string;
+  ghostBlob?:     GhostBlob;
   onRestart:      () => void;
 }
 
@@ -105,6 +106,8 @@ export class LeaderboardOverlay {
           deathMode:          'reset',
           deaths:             0,
           checkpointRespawns: 0,
+          // Upload the recorded ghost so others can race it (a few KB gzipped).
+          ...(this.opts.ghostBlob ? { ghostBlob: JSON.stringify(this.opts.ghostBlob) } : {}),
         }),
       });
 

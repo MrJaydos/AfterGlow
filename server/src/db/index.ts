@@ -29,11 +29,19 @@ export function initDb(): void {
       deaths              INTEGER NOT NULL DEFAULT 0,
       checkpoint_respawns INTEGER NOT NULL DEFAULT 0,
       is_clean            INTEGER NOT NULL DEFAULT 1,
-      created_at          TEXT    NOT NULL
+      created_at          TEXT    NOT NULL,
+      ghost_blob          TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_runs_board
       ON runs (level_id, is_clean, time_ms);
   `);
+
+  // Migration: add ghost_blob to tables created before Phase 8.
+  // SQLite has no "ADD COLUMN IF NOT EXISTS", so probe the schema first.
+  const cols = sqlite.prepare(`PRAGMA table_info(runs)`).all() as { name: string }[];
+  if (!cols.some(c => c.name === 'ghost_blob')) {
+    sqlite.exec(`ALTER TABLE runs ADD COLUMN ghost_blob TEXT`);
+  }
 
   db = drizzle(sqlite, { schema });
   console.log('[db] Ready');

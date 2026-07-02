@@ -169,12 +169,12 @@ Replace `better-sqlite3` with `pg` or `@electric-sql/pglite` in `server/package.
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Scaffold — repo, Vite+Phaser client, Fastify server, Docker, deploy pipeline | ✅ |
-| 2 | Movement core — player controller, fixed timestep, test level | ⏳ |
-| 3 | Level system — JSON loader, registry, first real level, timer | ⏳ |
-| 4 | Collectibles & combat — coins, destructibles, powerups, enemies | ⏳ |
-| 5 | Neon pass — glow pipeline, particles, parallax, palette polish | ⏳ |
-| 6 | Ghost recorder/player — record → encode/gzip → local replay | ⏳ |
-| 7 | Backend + leaderboards — Drizzle schema, API routes, validation | ⏳ |
-| 8 | Ghost racing UX — download + race ghosts, multi-ghost rendering | ⏳ |
+| 2 | Movement core — player controller, fixed timestep, test level | ✅ |
+| 3 | Level system — JSON loader, registry, first real level, timer | ✅ |
+| 4 | Collectibles & combat — coins, destructibles, powerups, enemies | ✅ |
+| 5 | Neon pass — glow pipeline, particles, parallax, palette polish | ✅ |
+| 6 | Ghost recorder/player — record → encode/gzip → local replay | ✅ |
+| 7 | Backend + leaderboards — Drizzle schema, API routes, validation | ✅ |
+| 8 | Ghost racing UX — download + race ghosts, multi-ghost rendering | ✅ |
 | 9 | Levels 2 & 3, balancing, par times | ⏳ |
 | 10 | Deploy hardening — README, persistence test, migrations-on-boot | ⏳ |

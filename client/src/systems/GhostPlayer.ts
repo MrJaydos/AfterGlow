@@ -15,20 +15,33 @@ export class GhostPlayer {
   /** Total recorded run time in ms — shown on finish screen. */
   readonly ghostTimeMs: number;
 
+  private readonly name: string;
+
   // Factory: async because DecompressionStream is async
-  static async fromBlob(scene: Phaser.Scene, blob: GhostBlob): Promise<GhostPlayer> {
+  static async fromBlob(
+    scene: Phaser.Scene,
+    blob: GhostBlob,
+    opts: { tint?: number; name?: string } = {},
+  ): Promise<GhostPlayer> {
     const compressed = base64ToUint8(blob.data);
     const raw        = await gunzip(compressed);
-    return new GhostPlayer(scene, new DataView(raw.buffer), blob.header.frameCount);
+    return new GhostPlayer(scene, new DataView(raw.buffer), blob.header.frameCount, opts);
   }
 
-  private constructor(scene: Phaser.Scene, view: DataView, frameCount: number) {
+  private constructor(
+    scene: Phaser.Scene,
+    view: DataView,
+    frameCount: number,
+    opts: { tint?: number; name?: string },
+  ) {
     this.view        = view;
     this.totalFrames = frameCount;
     this.ghostTimeMs = frameCount * FIXED_DT_MS;
+    this.name        = opts.name ?? '';
+    const tint       = opts.tint ?? PALETTE.GHOST_DEFAULT;
 
     this.sprite = scene.add.image(0, 0, 'player-tex')
-      .setTint(PALETTE.GHOST_DEFAULT)
+      .setTint(tint)
       .setAlpha(0.38)
       .setDepth(4)
       .setVisible(false);
@@ -36,9 +49,10 @@ export class GhostPlayer {
     this.label = scene.add.text(0, 0, '', {
       fontSize: '11px',
       fontFamily: 'monospace',
-      color: toHex(PALETTE.GHOST_DEFAULT),
+      color: toHex(tint),
       stroke: '#000000',
       strokeThickness: 3,
+      align: 'center',
     })
       .setDepth(10)
       .setOrigin(0.5, 1)
@@ -61,14 +75,17 @@ export class GhostPlayer {
     const gf  = this.view.getUint8 (off + 4) === 1 ? 1 : -1;
 
     this.sprite.setPosition(gx, gy).setFlipX(gf < 0).setVisible(true);
-    this.label.setPosition(gx, gy - 30).setVisible(true);
+    this.label.setVisible(true);
 
     // Delta: positive = player behind ghost (slower), negative = player ahead (faster)
     const deltaMs = this.estimateDelta(timerMs, playerX);
     const sign    = deltaMs >= 0 ? '+' : '-';
     const secs    = (Math.abs(deltaMs) / 1000).toFixed(2);
     const color   = deltaMs <= 0 ? '#00ff88' : toHex(PALETTE.DANGER_RED);
-    this.label.setText(`${sign}${secs}`).setColor(color);
+    const text    = this.name ? `${this.name}\n${sign}${secs}` : `${sign}${secs}`;
+    // Name label sits higher when two lines, so it clears the ghost sprite.
+    this.label.setPosition(this.sprite.x, this.sprite.y - (this.name ? 42 : 30));
+    this.label.setText(text).setColor(color);
   }
 
   hide(): void {
