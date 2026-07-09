@@ -93,14 +93,19 @@ Coolify watches this repo and redeploys on every push to `main`. Follow these st
 
 Add a volume in Coolify: host path or named volume mounted at `/data` inside the container. Without this, leaderboard data is wiped on every redeploy.
 
-### 3. Verify the pipeline
+### 3. Smoke-test checklist
 
-```
-push a commit → Coolify build log shows "Build successful"
-→ visit https://game.example.com/health → {"status":"ok"}
-→ load the game, submit a run
-→ docker restart (or trigger another deploy) and confirm the leaderboard persists
-```
+After every deploy, run through these in order:
+
+- [ ] `https://game.example.com/health` returns `{"status":"ok","timestamp":"..."}` (HTTP 200)
+- [ ] Game loads — title screen shows **AFTERGLOW** and three level cards (GRID_01, GRID_02, GRID_03)
+- [ ] Click a level card, cross the start line — timer begins
+- [ ] Complete a run — finish screen + leaderboard overlay appears
+- [ ] Submit a name — `POST /api/runs` returns a rank; entry appears in the leaderboard list
+- [ ] `GET /api/leaderboard/grid-01` returns the run just submitted
+- [ ] Trigger a redeploy (or `docker compose down && docker compose up --build` locally)
+- [ ] Revisit the leaderboard — the previous run is still there (confirms `/data` volume is mounted)
+- [ ] Ghost replay — start the same level again; a cyan ghost should appear racing your previous PB
 
 ---
 
@@ -176,5 +181,5 @@ Replace `better-sqlite3` with `pg` or `@electric-sql/pglite` in `server/package.
 | 6 | Ghost recorder/player — record → encode/gzip → local replay | ✅ |
 | 7 | Backend + leaderboards — Drizzle schema, API routes, validation | ✅ |
 | 8 | Ghost racing UX — download + race ghosts, multi-ghost rendering | ✅ |
-| 9 | Levels 2 & 3, balancing, par times | ⏳ |
-| 10 | Deploy hardening — README, persistence test, migrations-on-boot | ⏳ |
+| 9 | Levels 2 & 3, balancing, par times | ✅ |
+| 10 | Deploy hardening — README, persistence test, migrations-on-boot | ✅ |

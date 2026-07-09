@@ -593,6 +593,7 @@ export class GameScene extends Phaser.Scene {
   private makeCanvasTex(key: string, w: number, h: number, color: string): void {
     if (this.textures.exists(key)) return;
     const tex = this.textures.createCanvas(key, w, h);
+    if (!tex) return;
     tex.context.fillStyle = color;
     tex.context.fillRect(0, 0, w, h);
     tex.refresh();
@@ -601,6 +602,7 @@ export class GameScene extends Phaser.Scene {
   private makeCanvasCircle(key: string, size: number, color: string): void {
     if (this.textures.exists(key)) return;
     const tex = this.textures.createCanvas(key, size, size);
+    if (!tex) return;
     const r = size / 2;
     tex.context.fillStyle = color;
     tex.context.beginPath();

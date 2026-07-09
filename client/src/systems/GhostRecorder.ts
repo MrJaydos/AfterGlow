@@ -57,7 +57,7 @@ async function gzip(data: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === 'undefined') return data; // old browser fallback
   const cs     = new CompressionStream('gzip');
   const writer = cs.writable.getWriter();
-  writer.write(data);
+  writer.write(data as Uint8Array<ArrayBuffer>);
   writer.close();
   const chunks: Uint8Array[] = [];
   const reader = cs.readable.getReader();

@@ -121,7 +121,7 @@ async function gunzip(data: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') return data; // no compression was applied
   const ds     = new DecompressionStream('gzip');
   const writer = ds.writable.getWriter();
-  writer.write(data);
+  writer.write(data as Uint8Array<ArrayBuffer>);
   writer.close();
   const chunks: Uint8Array[] = [];
   const reader = ds.readable.getReader();

@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/index.ts",
-    "db:seed": "echo 'No seed data needed — levels are versioned in code'"
+    "db:seed": "echo 'No seed data needed — levels are versioned in code'",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
