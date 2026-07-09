@@ -35,7 +35,7 @@ export class MenuScene extends Phaser.Scene {
       fontFamily: 'monospace',
       color: toHex(PALETTE.PLAYER),
     }).setOrigin(0.5);
-    title.postFX?.addGlow(PALETTE.PLAYER, 14, 0, false, 0.08, 28);
+    title.postFX?.addGlow(PALETTE.PLAYER, 3, 0, false, 0.05, 10);
 
     // Subtitle
     this.add.text(640, 182, 'S E L E C T   L E V E L', {
