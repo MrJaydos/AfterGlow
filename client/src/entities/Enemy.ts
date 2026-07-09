@@ -29,6 +29,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     body.setImmovable(true);
   }
 
+  /** Called by GameScene on reset-mode respawn to bring this enemy back. */
+  respawn(x: number, y: number): void {
+    this.direction = 1;
+    this.enableBody(true, x, y, true, true);
+    (this.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+  }
+
   fixedUpdate(_dt: number): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
 

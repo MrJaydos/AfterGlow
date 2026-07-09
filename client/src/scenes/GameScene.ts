@@ -39,6 +39,7 @@ export class GameScene extends Phaser.Scene {
 
   // Combat / collectibles
   private enemies: Enemy[] = [];
+  private enemySpawns: { x: number; y: number }[] = []; // original positions for reset-mode revive
   private coinsCollected = 0;
 
   // Run state
@@ -104,6 +105,7 @@ export class GameScene extends Phaser.Scene {
     this.activeCheckpointId   = 0;
     this.coinsCollected       = 0;
     this.enemies              = [];
+    this.enemySpawns          = [];
     this.cameraLookaheadX     = 0;
     this.playerPrevAirborne   = false;
     this.playerPrevDashing    = false;
@@ -151,7 +153,8 @@ export class GameScene extends Phaser.Scene {
     this.activeSpawnX = this.spawnX;
     this.activeSpawnY = this.spawnY;
 
-    this.enemies = level.enemies;
+    this.enemies      = level.enemies;
+    this.enemySpawns  = level.enemies.map(e => ({ x: e.x, y: e.y }));
 
     // ── Player ────────────────────────────────────────────────────────────────
     this.player = new Player(this, this.spawnX, this.spawnY);
@@ -409,6 +412,12 @@ export class GameScene extends Phaser.Scene {
       const eb = e.body as Phaser.Physics.Arcade.Body;
       if (pb.right > eb.left && pb.left < eb.right &&
           pb.bottom > eb.top && pb.top < eb.bottom) {
+        // Stomp: player falling and bottom is in the top half of the enemy
+        if (pb.velocity.y > 80 && pb.bottom < eb.center.y + 8) {
+          this.killEnemy(e);
+          pb.setVelocityY(-340); // bounce
+          return;
+        }
         this.onDeath();
         return;
       }
@@ -418,7 +427,7 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(e: Enemy): void {
     audioSystem.play('kill');
     this.spawnBurst(e.x, e.y, 'pixel', PALETTE.DANGER_RED, 12, 5);
-    e.destroy();
+    e.disableBody(true, true); // hide + disable physics without destroying (needed for reset-revive)
     this.hitstopMs = 80;
   }
 
@@ -498,6 +507,10 @@ export class GameScene extends Phaser.Scene {
       this.timerText.setText(this.timer.format());
       this.statusText.setVisible(true);
       this.doRespawn(this.spawnX, this.spawnY);
+      // Revive all enemies at their original positions (run fully resets)
+      this.enemies.forEach((e, i) => {
+        if (!e.active) e.respawn(this.enemySpawns[i].x, this.enemySpawns[i].y);
+      });
     } else {
       this.checkpointRespawns++;
       this.doRespawn(this.activeSpawnX, this.activeSpawnY);

@@ -34,6 +34,12 @@ export class Rusher extends Enemy {
     this.playerRef = player;
   }
 
+  override respawn(x: number, y: number): void {
+    this.rusherState = 'patrol';
+    this.stateMs     = 0;
+    super.respawn(x, y);
+  }
+
   override fixedUpdate(dt: number): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setVelocityY(0);
