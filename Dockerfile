@@ -39,6 +39,13 @@ COPY --from=builder /app/server/public ./server/public
 EXPOSE 3000
 ENV PORT=3000
 ENV NODE_ENV=production
+# Default DB path — must match the persistent volume mount in Coolify (/data).
+# Without a volume mounted here, data survives container restarts but is wiped
+# on every redeploy. Mount a host/named volume at /data to persist leaderboards.
+ENV DB_PATH=/data/afterglow.sqlite
+
+# Ensure the data directory exists even before the volume is mounted
+RUN mkdir -p /data
 
 # Use 127.0.0.1 (not localhost) to avoid IPv6 resolution issues on Alpine.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

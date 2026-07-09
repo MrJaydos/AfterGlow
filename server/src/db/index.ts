@@ -10,6 +10,11 @@ export let sqlite: Database.Database;
 export let db: ReturnType<typeof drizzle<typeof schema>>;
 
 export function initDb(): void {
+  // Warn loudly if DB is not on a persistent volume path — data will be lost on redeploy
+  if (!DB_PATH.startsWith('/data')) {
+    console.warn('[db] ⚠️  DB_PATH is not under /data — leaderboard data will be lost on redeploy!');
+    console.warn('[db] ⚠️  Set DB_PATH=/data/afterglow.sqlite and mount /data as a persistent volume.');
+  }
   console.log(`[db] Opening SQLite at ${DB_PATH}`);
   sqlite = new Database(DB_PATH);
   sqlite.pragma('journal_mode = WAL');
