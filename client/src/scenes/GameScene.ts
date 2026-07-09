@@ -5,7 +5,10 @@ import { InputSystem } from '../systems/InputSystem';
 import { TimerSystem } from '../systems/TimerSystem';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
+import { Rusher } from '../entities/Rusher';
 import { LEVEL_REGISTRY, DEFAULT_LEVEL_ID } from '../levels/LevelRegistry';
+import { loadSettings, type GameSettings } from '../systems/settings';
+import { audioSystem } from '../systems/AudioSystem';
 import type { Checkpoint } from '../levels/types';
 import { PALETTE, GHOST_HUES, toHex } from '../gfx/palette';
 import { buildParallax } from '../gfx/ParallaxBg';
@@ -72,14 +75,22 @@ export class GameScene extends Phaser.Scene {
   private finishHint!:      Phaser.GameObjects.Text;
 
   // Populated by init() from scene.start/restart data
-  private selectedLevelId: string = '';
+  private selectedLevelId:   string    = '';
+  private selectedDeathMode: DeathMode = 'reset';
+
+  // Per-session settings (read once in create)
+  private settings!: GameSettings;
+
+  // Sound-state tracking (prev frame for edge detection)
+  private playerPrevDashing = false;
 
   constructor() {
     super({ key: 'Game' });
   }
 
-  init(data?: { levelId?: string }): void {
-    this.selectedLevelId = data?.levelId ?? DEFAULT_LEVEL_ID;
+  init(data?: { levelId?: string; deathMode?: DeathMode }): void {
+    this.selectedLevelId   = data?.levelId   ?? DEFAULT_LEVEL_ID;
+    this.selectedDeathMode = data?.deathMode ?? 'reset';
   }
 
   preload(): void { /* no file assets */ }
@@ -95,9 +106,13 @@ export class GameScene extends Phaser.Scene {
     this.enemies              = [];
     this.cameraLookaheadX     = 0;
     this.playerPrevAirborne   = false;
+    this.playerPrevDashing    = false;
     this.recorder             = null;
     this.ghostPlayers         = [];
     this.pendingGhost         = null;
+
+    this.settings  = loadSettings();
+    this.deathMode = this.selectedDeathMode;
 
     // ── Textures ──────────────────────────────────────────────────────────────
     this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
@@ -143,8 +158,15 @@ export class GameScene extends Phaser.Scene {
     this.player.setDepth(5);
     this.physics.add.collider(this.player, level.platforms);
 
-    // Selective glow on player (WebGL only — postFX is null in Canvas mode)
-    this.player.postFX?.addGlow(PALETTE.PLAYER, 8, 0, false, 0.1, 20);
+    // Selective glow on player (WebGL only; skipped if glow setting is off)
+    if (this.settings.glow) {
+      this.player.postFX?.addGlow(PALETTE.PLAYER, 8, 0, false, 0.1, 20);
+    }
+
+    // Give Rusher enemies their player reference now that player exists
+    for (const e of this.enemies) {
+      if (e instanceof Rusher) e.setPlayer(this.player);
+    }
 
     // ── Collectible overlaps ───────────────────────────────────────────────────
     this.physics.add.overlap(
@@ -156,13 +178,15 @@ export class GameScene extends Phaser.Scene {
       (_p, pu)   => { this.onPowerupCollect(pu as Phaser.Physics.Arcade.Image); },
     );
 
-    // Glow on collectibles
-    level.coins.getChildren().forEach(c => {
-      (c as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.COIN, 4, 0, false, 0.1, 10);
-    });
-    level.powerups.getChildren().forEach(p => {
-      (p as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.POWERUP_VIOLET, 5, 0, false, 0.1, 12);
-    });
+    // Glow on collectibles (conditional)
+    if (this.settings.glow) {
+      level.coins.getChildren().forEach(c => {
+        (c as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.COIN, 4, 0, false, 0.1, 10);
+      });
+      level.powerups.getChildren().forEach(p => {
+        (p as Phaser.Physics.Arcade.Image).postFX?.addGlow(PALETTE.POWERUP_VIOLET, 5, 0, false, 0.1, 12);
+      });
+    }
 
     // Pulsing finish-zone glow overlay
     const fGlow = this.add.rectangle(this.finishLineX + 80, WORLD_H - 24, 160, 48, PALETTE.FINISH_LIME, 0.12)
@@ -171,7 +195,7 @@ export class GameScene extends Phaser.Scene {
       targets: fGlow, alpha: 0.04, duration: 900,
       yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
-    fGlow.postFX?.addGlow(PALETTE.FINISH_LIME, 10, 0, false, 0.1, 22);
+    if (this.settings.glow) fGlow.postFX?.addGlow(PALETTE.FINISH_LIME, 10, 0, false, 0.1, 22);
 
     // ── Ghost racing (own PB from localStorage + downloaded rival ghosts) ─────
     void this.loadGhosts();
@@ -251,6 +275,16 @@ export class GameScene extends Phaser.Scene {
         }
       }
       this.playerPrevAirborne = isAirborne;
+
+      // ── Sound: state-transition edge detection ─────────────────────────────
+      const isDashing = this.player.playerState === 'dash';
+      if (!this.playerPrevAirborne && isAirborne) {
+        const vy = (this.player.body as Phaser.Physics.Arcade.Body).velocity.y;
+        if (vy < -100) audioSystem.play('jump');
+      }
+      if (this.playerPrevAirborne && !isAirborne) audioSystem.play('land');
+      if (!this.playerPrevDashing && isDashing)    audioSystem.play('dash');
+      this.playerPrevDashing = isDashing;
 
       // ── Phase 5: dash afterimages ──────────────────────────────────────────
       if (this.player.playerState === 'dash') {
@@ -382,12 +416,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private killEnemy(e: Enemy): void {
+    audioSystem.play('kill');
     this.spawnBurst(e.x, e.y, 'pixel', PALETTE.DANGER_RED, 12, 5);
     e.destroy();
     this.hitstopMs = 80;
   }
 
   private onCoinCollect(coin: Phaser.Physics.Arcade.Image): void {
+    audioSystem.play('coin');
     this.spawnBurst(coin.x, coin.y, 'coin-tex', PALETTE.COIN, 8, 0.8);
     coin.destroy();
     this.coinsCollected++;
@@ -395,6 +431,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPowerupCollect(pu: Phaser.Physics.Arcade.Image): void {
+    audioSystem.play('powerup');
     this.spawnBurst(pu.x, pu.y, 'powerup-tex', PALETTE.POWERUP_VIOLET, 10, 1);
     pu.destroy();
     this.player.applySpeedBoost(5000);
@@ -412,6 +449,7 @@ export class GameScene extends Phaser.Scene {
   private finishRun(): void {
     this.runPhase = 'finished';
     this.timer.stop();
+    audioSystem.play('finish');
 
     // Encode and save ghost if it's a new PB (async — happens in background).
     // pendingGhost is handed to the overlay so the run's ghost is uploaded too.
@@ -447,8 +485,8 @@ export class GameScene extends Phaser.Scene {
   private onDeath(): void {
     this.deaths++;
 
-    // Screen shake + red flash
-    this.cameras.main.shake(180, 0.012);
+    audioSystem.play('death');
+    if (this.settings.shake) this.cameras.main.shake(180, 0.012);
     this.spawnDeathFlash();
 
     if (this.deathMode === 'reset') {

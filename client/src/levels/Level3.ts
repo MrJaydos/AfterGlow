@@ -3,6 +3,7 @@ import type { LevelMeta } from '@afterglow/shared';
 import { PALETTE } from '../gfx/palette';
 import { WORLD_W } from '../constants';
 import { Enemy } from '../entities/Enemy';
+import { Rusher } from '../entities/Rusher';
 import type { BuiltLevel, Checkpoint } from './types';
 
 export const LEVEL3_META: LevelMeta = {
@@ -107,6 +108,11 @@ export function buildLevel3(scene: Phaser.Scene): BuiltLevel {
   addEnemy(1450, 252, 1390, 1510);  // catch platform (top=270)
   addEnemy(1985, 182, 1940, 2035);  // peak 2 (top=200)
   addEnemy(3450, 654, 3300, 3650);  // ground near finish (y=654)
+
+  // Rusher: guards the approach to the finish, charges when player enters range
+  const rusher3 = new Rusher(scene, 3600, 654, 3450, 3720);
+  rusher3.setDepth(4);
+  enemies.push(rusher3);
 
   // ── Powerups ──────────────────────────────────────────────────────────────────
   const powerups = scene.physics.add.staticGroup();
