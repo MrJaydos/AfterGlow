@@ -71,8 +71,15 @@ export class GameScene extends Phaser.Scene {
   private finishTimeLabel!: Phaser.GameObjects.Text;
   private finishHint!:      Phaser.GameObjects.Text;
 
+  // Populated by init() from scene.start/restart data
+  private selectedLevelId: string = '';
+
   constructor() {
     super({ key: 'Game' });
+  }
+
+  init(data?: { levelId?: string }): void {
+    this.selectedLevelId = data?.levelId ?? DEFAULT_LEVEL_ID;
   }
 
   preload(): void { /* no file assets */ }
@@ -116,7 +123,7 @@ export class GameScene extends Phaser.Scene {
     this.buildGrid();
 
     // ── Level ─────────────────────────────────────────────────────────────────
-    const def   = LEVEL_REGISTRY[DEFAULT_LEVEL_ID];
+    const def   = LEVEL_REGISTRY[this.selectedLevelId] ?? LEVEL_REGISTRY[DEFAULT_LEVEL_ID];
     this.levelId      = def.meta.levelId;
     this.levelVersion = def.meta.version;
     const level = def.build(this);
@@ -431,7 +438,8 @@ export class GameScene extends Phaser.Scene {
         levelId:        this.levelId,
         levelVersion:   this.levelVersion,
         ghostBlob:      this.pendingGhost ?? undefined,
-        onRestart:      () => { this.scene.restart(); },
+        onRestart:      () => { this.scene.restart({ levelId: this.levelId }); },
+        onMenu:         () => { this.scene.start('Menu'); },
       });
     });
   }

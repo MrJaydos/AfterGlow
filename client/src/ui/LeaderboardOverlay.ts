@@ -10,6 +10,7 @@ interface Options {
   levelVersion:   string;
   ghostBlob?:     GhostBlob;
   onRestart:      () => void;
+  onMenu?:        () => void;
 }
 
 export class LeaderboardOverlay {
@@ -60,7 +61,10 @@ export class LeaderboardOverlay {
           <div style="opacity:0.4;font-size:12px">Loading…</div>
         </div>
 
-        <button id="lb-restart" style="${styleStr(STYLES.restartBtn)}">▶  PLAY AGAIN</button>
+        <div style="display:flex;gap:8px;margin-top:0">
+          <button id="lb-restart" style="${styleStr(STYLES.restartBtn)}">▶  PLAY AGAIN</button>
+          <button id="lb-menu" style="${styleStr(STYLES.menuBtn)}">☰  LEVELS</button>
+        </div>
         <a id="lb-home" href="https://games.alfi3.com" style="${styleStr(STYLES.homeBtn)}">←  MORE GAMES</a>
       </div>
     `;
@@ -79,6 +83,12 @@ export class LeaderboardOverlay {
     restartBtn.addEventListener('click', () => {
       this.destroy();
       this.opts.onRestart();
+    });
+
+    const menuBtn = this.root.querySelector<HTMLButtonElement>('#lb-menu')!;
+    menuBtn.addEventListener('click', () => {
+      this.destroy();
+      this.opts.onMenu?.();
     });
   }
 
@@ -260,7 +270,18 @@ const STYLES: Record<string, Record<string, string>> = {
     padding: '7px 18px',
     cursor: 'pointer',
     'border-radius': '3px',
-    width: '100%',
+    flex: '1',
+    'letter-spacing': '2px',
+  },
+  menuBtn: {
+    background: 'transparent',
+    border: '1px solid #404066',
+    color: '#404066',
+    'font-family': 'monospace',
+    'font-size': '13px',
+    padding: '7px 18px',
+    cursor: 'pointer',
+    'border-radius': '3px',
     'letter-spacing': '2px',
   },
   homeBtn: {
