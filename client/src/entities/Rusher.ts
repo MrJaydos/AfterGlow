@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { PALETTE } from '../gfx/palette';
 import { Enemy } from './Enemy';
 
 const PATROL_SPEED = 85;   // px/s — slightly slower than regular enemy patrol
@@ -27,7 +26,7 @@ export class Rusher extends Enemy {
     patrolLeft: number, patrolRight: number,
   ) {
     super(scene, x, y, patrolLeft, patrolRight);
-    this.setTint(PALETTE.DANGER_ORANGE);
+    this.setTexture('rusher-tex'); // orange pixel art — distinct from red enemy-tex
   }
 
   setPlayer(player: Phaser.GameObjects.Sprite): void {

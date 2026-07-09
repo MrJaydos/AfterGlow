@@ -3,6 +3,7 @@ import type { LevelMeta } from '@afterglow/shared';
 import { PALETTE } from '../gfx/palette';
 import { WORLD_W } from '../constants';
 import { Enemy } from '../entities/Enemy';
+import { drawPlatformDecor } from '../gfx/drawPlatform';
 import type { BuiltLevel, Checkpoint } from './types';
 
 export const LEVEL1_META: LevelMeta = {
@@ -16,7 +17,8 @@ const FLOOR_Y = 672;
 const FLOOR_H = 48;
 
 export function buildLevel1(scene: Phaser.Scene): BuiltLevel {
-  const group = scene.physics.add.staticGroup();
+  const group   = scene.physics.add.staticGroup();
+  const platGfx = scene.add.graphics().setDepth(1);
 
   const addPlat = (
     x: number, y: number, w: number, h: number,
@@ -24,8 +26,9 @@ export function buildLevel1(scene: Phaser.Scene): BuiltLevel {
   ): void => {
     const img = group.create(x + w / 2, y + h / 2, 'pixel') as Phaser.Physics.Arcade.Image;
     img.setDisplaySize(w, h);
-    img.setTint(color);
+    img.setVisible(false); // physics body only — graphics handles visuals
     img.refreshBody();
+    drawPlatformDecor(platGfx, x, y, w, h, color);
   };
 
   // ── Ground floor ───────────────────────────────────────────────────────────

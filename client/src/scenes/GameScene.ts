@@ -12,6 +12,7 @@ import { audioSystem } from '../systems/AudioSystem';
 import type { Checkpoint } from '../levels/types';
 import { PALETTE, GHOST_HUES, toHex } from '../gfx/palette';
 import { buildParallax } from '../gfx/ParallaxBg';
+import { buildGameSprites } from '../gfx/SpriteArt';
 import { GhostRecorder } from '../systems/GhostRecorder';
 import { GhostPlayer } from '../systems/GhostPlayer';
 import { GhostManager } from '../systems/GhostManager';
@@ -117,11 +118,7 @@ export class GameScene extends Phaser.Scene {
     this.deathMode = this.selectedDeathMode;
 
     // ── Textures ──────────────────────────────────────────────────────────────
-    this.makeCanvasTex('player-tex',  24, 44, toHex(PALETTE.PLAYER));
-    this.makeCanvasTex('enemy-tex',   28, 36, toHex(PALETTE.DANGER_RED));
-    this.makeCanvasTex('pixel',        1,  1, '#ffffff');
-    this.makeCanvasCircle('coin-tex',     16, toHex(PALETTE.COIN));
-    this.makeCanvasCircle('powerup-tex',  20, toHex(PALETTE.POWERUP_VIOLET));
+    buildGameSprites(this);
 
     // ── Physics world ─────────────────────────────────────────────────────────
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -169,6 +166,14 @@ export class GameScene extends Phaser.Scene {
     // Give Rusher enemies their player reference now that player exists
     for (const e of this.enemies) {
       if (e instanceof Rusher) e.setPlayer(this.player);
+    }
+
+    // Subtle glow on enemies — red for grunts, orange for rushers (WebGL only)
+    if (this.settings.glow) {
+      for (const e of this.enemies) {
+        const glowColor = e instanceof Rusher ? PALETTE.DANGER_ORANGE : PALETTE.DANGER_RED;
+        e.postFX?.addGlow(glowColor, 4, 0, false, 0.1, 12);
+      }
     }
 
     // ── Collectible overlaps ───────────────────────────────────────────────────
@@ -639,27 +644,6 @@ export class GameScene extends Phaser.Scene {
     const s  = Math.floor((total % 60_000) / 1_000);
     const ms2 = total % 1_000;
     return `${m}:${s.toString().padStart(2, '0')}.${ms2.toString().padStart(3, '0')}`;
-  }
-
-  private makeCanvasTex(key: string, w: number, h: number, color: string): void {
-    if (this.textures.exists(key)) return;
-    const tex = this.textures.createCanvas(key, w, h);
-    if (!tex) return;
-    tex.context.fillStyle = color;
-    tex.context.fillRect(0, 0, w, h);
-    tex.refresh();
-  }
-
-  private makeCanvasCircle(key: string, size: number, color: string): void {
-    if (this.textures.exists(key)) return;
-    const tex = this.textures.createCanvas(key, size, size);
-    if (!tex) return;
-    const r = size / 2;
-    tex.context.fillStyle = color;
-    tex.context.beginPath();
-    tex.context.arc(r, r, r - 1, 0, Math.PI * 2);
-    tex.context.fill();
-    tex.refresh();
   }
 
   private buildGrid(): void {
