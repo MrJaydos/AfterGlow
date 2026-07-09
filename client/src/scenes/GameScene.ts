@@ -664,11 +664,11 @@ export class GameScene extends Phaser.Scene {
 
   private buildGrid(): void {
     const g = this.add.graphics();
-    g.lineStyle(1, PALETTE.GRID_LINE, 0.18);
+    g.lineStyle(1, PALETTE.GRID_LINE, 0.10); // was 0.18 — reduced so grid recedes behind platforms
     const step = 80;
     for (let x = 0; x <= WORLD_W; x += step) g.lineBetween(x, 0, x, WORLD_H);
     for (let y = 0; y <= WORLD_H; y += step) g.lineBetween(0, y, WORLD_W, y);
     // depth -15: above parallax layers (-17,-18,-19) but below platforms (0)
-    g.setDepth(-15).setScrollFactor(0.4, 0.4);
+    g.setDepth(-15).setScrollFactor(0.22, 0.22); // was 0.4 — pushed further back for depth separation
   }
 }

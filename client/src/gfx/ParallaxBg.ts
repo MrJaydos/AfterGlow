@@ -29,8 +29,8 @@ export function buildParallax(scene: Phaser.Scene): void {
     const x     = r1() * sw;
     const y     = r1() * WORLD_H * 0.9;
     const size  = r1() < 0.82 ? 1 : 2;
-    const alpha = 0.25 + r1() * 0.65;
-    const col   = r1() < 0.25 ? 0xaaccff : 0xffffff; // occasional blue tint
+    const alpha = 0.15 + r1() * 0.35; // cap at 0.50 — stars shouldn't compete with foreground
+    const col   = r1() < 0.25 ? 0xaaccff : 0xffffff;
     starG.fillStyle(col, alpha);
     starG.fillRect(x, y, size, size);
   }
@@ -41,10 +41,12 @@ export function buildParallax(scene: Phaser.Scene): void {
     .setScrollFactor(0.15, 0.05);
 
   const hw = layerW(0.15);
-  // Warm magenta bloom rising from the horizon line (~y 350)
-  horizG.fillGradientStyle(0x000000, 0x000000, PALETTE.HORIZON, PALETTE.HORIZON, 0, 0, 0.14, 0.14);
+  // Cool deep-violet bloom at horizon — kept dim so it doesn't bleed into foreground reads.
+  // Using a desaturated purple (not the hot-pink HORIZON color) to maintain BG/FG contrast.
+  const HORIZON_VIOLET = 0x2a0055;
+  horizG.fillGradientStyle(0x000000, 0x000000, HORIZON_VIOLET, HORIZON_VIOLET, 0, 0, 0.07, 0.07);
   horizG.fillRect(0, 200, hw, 280);
-  horizG.fillGradientStyle(PALETTE.HORIZON, PALETTE.HORIZON, 0x000000, 0x000000, 0.14, 0.14, 0, 0);
+  horizG.fillGradientStyle(HORIZON_VIOLET, HORIZON_VIOLET, 0x000000, 0x000000, 0.07, 0.07, 0, 0);
   horizG.fillRect(0, 480, hw, 160);
 
   // Faint scan lines through the atmospheric band
@@ -74,13 +76,13 @@ export function buildParallax(scene: Phaser.Scene): void {
     cityG.lineStyle(1, PALETTE.PLATFORM_GLOW, 0.2 + r2() * 0.2);
     cityG.lineBetween(bx, by, bx + bw, by);
 
-    // Lit windows
+    // Lit windows — kept dim so city reads as deep background, not scene objects
     const winCount = Math.floor(r2() * 5);
     for (let w = 0; w < winCount; w++) {
       const wx = bx + 5 + r2() * Math.max(0, bw - 14);
       const wy = by + 12 + r2() * Math.max(0, bh - 24);
       const wc = r2() > 0.45 ? PALETTE.POWERUP_VIOLET : PALETTE.PLATFORM_GLOW;
-      cityG.fillStyle(wc, 0.4 + r2() * 0.45);
+      cityG.fillStyle(wc, 0.18 + r2() * 0.18); // was 0.4–0.85, now 0.18–0.36
       cityG.fillRect(wx, wy, 3, 5);
     }
 
